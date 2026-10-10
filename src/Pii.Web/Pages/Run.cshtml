@@ -1,0 +1,56 @@
+@page "/Runs/{id}"
+@model RunModel
+@{ ViewData["Title"] = "Run record"; var run = Model.Run; }
+<div class="page-heading"><div><p class="eyebrow">Execution record</p><h1>Analysis run</h1></div><a asp-page="/Runs">All runs</a></div>
+<div class="context-line"><span>@run.Mode</span><span>Run: @run.Status</span><span>AI: @run.AiStatus</span><span>Revision @run.Revision</span><span>As of @Display.Time(run.AsOf)</span></div>
+<div asp-validation-summary="All"></div>
+<div class="actions"><a class="command secondary" asp-page="/Run" asp-route-id="@run.Id" title="Refresh status"><i class="icon icon-refresh-cw" aria-hidden="true"></i> Refresh status</a>
+<a asp-page="/Artifact" asp-route-kind="audit" asp-route-id="@run.Id">Download private task/evidence/usage audit</a>
+@if (run.Brief is not null && run.ReportBlob is not null) { <a asp-page="/Artifact" asp-route-kind="report" asp-route-id="@run.Id">Download private brief</a> }
+@if (Display.Active(run))
+{
+    <form method="post" asp-page-handler="Cancel" asp-route-id="@run.Id"><button class="danger" type="submit"><i class="icon icon-circle-stop" aria-hidden="true"></i> Request cancellation</button></form>
+}
+</div>
+@if (run.CancelRequested) { <p class="warning">Cancellation requested. A submitted provider call may already have incurred usage; the worker checks durable cancellation before subsequent work and publication.</p> }
+<section class="band"><h2>Manifest</h2><dl class="manifest">
+<dt>Run ID</dt><dd>@run.Id</dd><dt>Created / finished</dt><dd>@Display.Time(run.CreatedAt) / @Display.Time(run.FinishedAt)</dd><dt>Deadline</dt><dd>@Display.Time(run.Deadline)</dd><dt>Latency</dt><dd>@(run.FinishedAt is { } finished ? (finished - run.CreatedAt).TotalSeconds.ToString("N1", System.Globalization.CultureInfo.InvariantCulture) + " seconds (including queue wait)" : "Pending / running")</dd><dt>Generation / version</dt><dd>@run.Generation / @run.Version</dd><dt>Schema / code</dt><dd>@run.SchemaVersion / @run.CodeVersion</dd><dt>Prompt / config</dt><dd>@run.PromptVersion / @run.ConfigVersion</dd><dt>Model binding</dt><dd>@run.ModelBinding</dd><dt>Policy</dt><dd>@(run.Portfolio?.Policy.Configured == true ? "Configured" : "Unconfigured") / version @(run.Portfolio?.Policy.Version.ToString() ?? "Unavailable")</dd><dt>Previous run</dt><dd>@(run.PreviousRunId ?? "No previous run")</dd><dt>Decisions / tools</dt><dd>@run.Decisions / @run.ToolInvocations</dd><dt>Research / critic / model submissions</dt><dd>@run.ResearchTasks / @run.CriticPasses / @run.ModelSubmissions</dd><dt>Reserved tokens / USD</dt><dd>@run.ReservedTokens / @Display.Number(run.ReservedUsd)</dd>
+</dl></section>
+@if (run.Errors.Count > 0) { <section class="band"><h2>Errors</h2><ul class="issues warning">@foreach (var error in run.Errors) { <li>@error</li> }</ul></section> }
+@if (run.Brief is { } brief) { <section class="band"><h2>Published A–I brief</h2><partial name="_Brief" model="brief" /></section> }
+else { <p class="notice">No brief published for this run. Pending, failed or cancelled work is not a completed research result.</p> }
+<section class="band"><h2>Task results and critic findings</h2>
+@if (run.Tasks.Count == 0) { <p class="muted">No persisted task results.</p> }
+@foreach (var task in run.Tasks)
+{
+    <details><summary>@task.Request.Role · @task.Request.InstrumentId · @task.Status</summary><div>
+    <div class="task-meta"><span>Task @task.Request.TaskId</span><span>Parent @(task.Request.ParentTaskId ?? "None")</span><span>Attempt @task.Request.Attempt</span><span>Permission @task.Request.PermissionProfile</span><span>Schema @task.Request.SchemaVersion</span><span>@Display.Time(task.StartedAt) → @Display.Time(task.FinishedAt)</span><span>@((task.FinishedAt - task.StartedAt).TotalSeconds.ToString("N1", System.Globalization.CultureInfo.InvariantCulture)) seconds</span></div>
+    <p>@task.Request.Intent</p><p>Output status: @task.Output.Status</p>
+    @foreach (var claim in task.Output.Claims)
+    {
+        <div class="assessment"><div class="assessment-header"><strong>@claim.Kind / @claim.Horizon / @claim.InstrumentId</strong><span class="status-label">@claim.Id</span></div><p>@claim.Text</p><small>Support: @string.Join(", ", claim.EvidenceIds) · Counterevidence: @string.Join(", ", claim.CounterEvidenceIds ?? []) · Numeric reference: @(claim.NumericReference ?? "None")</small></div>
+    }
+    @foreach (var assessment in task.Output.Assessments) { <partial name="_Assessment" model="assessment" /> }
+    @foreach (var followUp in task.Output.FollowUps) { <p><strong>Follow-up: @followUp.InstrumentId</strong><br />@followUp.Question<br /><span class="muted">@followUp.Reason</span></p> }
+    <ul class="issues">@foreach (var uncertainty in task.Output.Uncertainties) { <li>@uncertainty</li> }</ul>
+    </div></details>
+}
+</section>
+<section class="band"><h2>Execution trace</h2><div class="table-scroll"><table><thead><tr><th>Time</th><th>Kind / role</th><th>Status</th><th>Decision / outcome</th><th>Artifact metadata</th></tr></thead><tbody>
+@foreach (var trace in run.Trace.OrderBy(item => item.Time)) { <tr><td>@Display.Time(trace.Time)</td><td>@trace.Kind<small>@trace.Role</small></td><td>@trace.Status</td><td>@trace.Summary</td><td>@(trace.Artifact is null ? "None" : "Retained privately; raw model prompts are not downloadable")<small>@trace.Id</small></td></tr> }
+</tbody></table></div></section>
+<section class="band"><h2>Evidence</h2>
+@if (run.Evidence.Count == 0) { <p class="muted">No persisted evidence.</p> }
+@foreach (var evidence in run.Evidence)
+{
+    <details id="evidence-@evidence.Id"><summary>@evidence.Source · @evidence.Kind · @evidence.InstrumentId</summary><div><dl class="manifest"><dt>Evidence ID</dt><dd>@evidence.Id</dd><dt>Published / retrieved</dt><dd>@Display.Time(evidence.PublishedAt) / @Display.Time(evidence.RetrievedAt)</dd><dt>Period end</dt><dd>@(evidence.PeriodEnd is null ? "Not supplied" : Display.Time(evidence.PeriodEnd))</dd><dt>Provenance</dt><dd>@evidence.Provenance</dd><dt>Model processing allowed</dt><dd>@evidence.ModelProcessingAllowed</dd><dt>Source</dt><dd>@if (Display.Citation(evidence.Url) is { } citation) { <a href="@citation" rel="noopener noreferrer" target="_blank">@citation</a> } else { <span>@evidence.Url (not an approved external link)</span> }</dd></dl><p class="preserve-lines">@evidence.Text</p>
+    <div class="table-scroll"><table><thead><tr><th>Numeric field</th><th class="numeric">Source value</th></tr></thead><tbody>@foreach (var number in evidence.Numbers) { <tr><td>@number.Key</td><td class="numeric">@Display.Quantity(number.Value)</td></tr> }</tbody></table></div></div></details>
+}
+</section>
+<section class="band"><h2>Usage ledger</h2><p class="muted">Reservations are conservative bounds, not invoices. Unknown provider usage is not zero. Monthly limits also apply to new runs.</p><div class="table-scroll"><table><thead><tr><th>Task / time</th><th>State</th><th class="numeric">Input tokens</th><th class="numeric">Output tokens</th><th class="numeric">Reserved USD</th><th class="numeric">Actual USD</th><th>Provider request</th></tr></thead><tbody>
+@foreach (var usage in run.Usage) { <tr><td>@usage.TaskId<small>@Display.Time(usage.Time)</small></td><td>@usage.State</td><td class="numeric">@(usage.InputTokens?.ToString() ?? "Unknown")</td><td class="numeric">@(usage.OutputTokens?.ToString() ?? "Unknown")</td><td class="numeric">@Display.Number(usage.ReservedUsd)</td><td class="numeric">@(usage.ActualUsd is null ? "Unknown" : Display.Number(usage.ActualUsd))</td><td>@(usage.ProviderRequestId ?? "Unknown")</td></tr> }
+</tbody></table></div></section>
+@if (!Display.Active(run))
+{
+    <section class="band"><h2>Retry as a new analysis</h2><p class="warning">This creates a new run on the current confirmed revision and current cutoff. It can incur fresh spend. The old run is not reset: attempts, counters, reservations, uncertain charges and history are preserved.</p><form method="post" asp-page-handler="Retry" asp-route-id="@run.Id"><input asp-for="RetryKey" type="hidden" /><label class="check"><input asp-for="AcceptSpend" /><span>I authorize a new analysis under current run/month limits; this does not resume or reset the old run.</span></label><button class="secondary" type="submit">Retry as new run</button></form></section>
+}

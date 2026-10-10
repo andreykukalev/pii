@@ -1,0 +1,17 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "PII: Private Workspace",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"run",
+				"--project",
+				"src/Pii.Web"
+			],
+			"isBackground": true,
+			"problemMatcher": []
+		}
+	]
+}

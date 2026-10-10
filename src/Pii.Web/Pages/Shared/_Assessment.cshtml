@@ -1,0 +1,2 @@
+@model Assessment
+<article class="assessment"><div class="assessment-header"><h3>@Model.InstrumentId</h3><strong>@Model.Category</strong><span class="status-label">@Model.Horizon · informational proposal</span></div><p>@Model.Thesis</p><p><strong>Counterargument</strong><br />@Model.Counterargument</p><ul class="issues">@foreach (var risk in Model.Risks) { <li>@risk</li> }</ul><small>Claims: @string.Join(", ", Model.ClaimIds)</small></article>

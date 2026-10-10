@@ -1,0 +1,20 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Pii host security and workflow tests",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"test",
+				"c:\\_DATA\\Sources\\_m\\pii\\tests\\Pii.Web.Tests\\Pii.Web.Tests.csproj",
+				"--nologo"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"group": "test"
+		}
+	]
+}

@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup><ProjectReference Include="../Pii.Domain/Pii.Domain.csproj" /></ItemGroup>
+  <ItemGroup><PackageReference Include="CsvHelper" Version="33.1.0" /></ItemGroup>
+</Project>

@@ -1,0 +1,17 @@
+@page
+@model RunsModel
+@{ ViewData["Title"] = "Runs"; }
+<div class="page-heading"><div><p class="eyebrow">Durable analysis</p><h1>Runs</h1></div></div>
+<div class="context-line"><span>Configured mode: @Model.Runtime.Mode</span><span>Model: @Model.Runtime.ModelBinding</span><span>AI budget: USD @Display.Number(Model.Runtime.Limits.PerRunUsd) / run</span></div>
+<div asp-validation-summary="All"></div>
+<section class="band"><h2>New analysis</h2><p>Submission persists pending work. Execution is performed by the finite worker, not this request. FixtureReplay uses static synthetic transports, not current prices or real AI. Live and ModelOnFixtures runs can incur new spend.</p>
+<form method="post" asp-page-handler="Submit"><input asp-for="SubmissionKey" type="hidden" /><label class="check"><input asp-for="AcceptSpend" /><span>I authorize a new run under the configured technical limits. Existing runs, counters and uncertain usage remain unchanged. Repeated submission of this form uses the same durable idempotency key.</span></label><button type="submit"><i class="icon icon-plus" aria-hidden="true"></i> Submit analysis</button></form></section>
+<section class="band"><h2>Run history</h2>
+@if (Model.Runs.Count == 0) { <p class="muted">No analysis runs.</p> }
+else
+{
+<div class="table-scroll"><table><thead><tr><th>Run</th><th>Created</th><th>Finished</th><th>Revision</th><th>Mode</th><th>Status</th><th>AI status</th><th class="numeric">Reserved USD</th><th>Generation</th></tr></thead><tbody>
+@foreach (var run in Model.Runs) { <tr><td><a asp-page="/Run" asp-route-id="@run.Id">@run.Id</a></td><td>@Display.Time(run.CreatedAt)</td><td>@Display.Time(run.FinishedAt)</td><td>@run.Revision</td><td>@run.Mode</td><td>@run.Status</td><td>@run.AiStatus</td><td class="numeric">@Display.Number(run.ReservedUsd)</td><td>@run.Generation</td></tr> }
+</tbody></table></div>
+}
+</section>

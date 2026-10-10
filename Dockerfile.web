@@ -1,0 +1,17 @@
+ARG SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0
+ARG ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0
+FROM ${SDK_IMAGE} AS build
+ARG SDK_VERSION=10.0.401
+WORKDIR /source
+COPY . .
+RUN test "$(dotnet --version)" = "$SDK_VERSION"
+RUN dotnet restore src/Pii.Web/Pii.Web.csproj --runtime linux-x64 -p:NuGetAudit=true -p:NuGetAuditMode=all
+RUN dotnet publish src/Pii.Web/Pii.Web.csproj --configuration Release --runtime linux-x64 --no-restore --self-contained false -p:UseAppHost=false -p:ContinuousIntegrationBuild=true --output /out
+
+FROM ${ASPNET_IMAGE} AS final
+WORKDIR /app
+ENV ASPNETCORE_HTTP_PORTS=8080 ASPNETCORE_ENVIRONMENT=Production DOTNET_EnableDiagnostics=0
+COPY --from=build --chown=$APP_UID:$APP_UID /out .
+USER $APP_UID
+EXPOSE 8080
+ENTRYPOINT ["dotnet", "Pii.Web.dll"]

@@ -1,0 +1,13 @@
+# History And Evaluation
+
+[AnalysisRun](../../src/Pii.Application/Contracts.cs) persists pinned revision/portfolio, cutoff, prior-run references, tasks/results, evidence, quotes, trace/artifact references, claim generation, usage reservations, errors and brief. It includes schema/code/prompt/config/model-binding labels. SQL revisions and immutable Blob report/stage artifacts support inspection after process exit.
+
+Inspect original published output and retained evidence, not an identical regenerated LLM answer. Deterministic replay requires the exact inputs and calculation code; later provider revisions/restatements or different model answers must not overwrite an earlier conclusion silently. Current code/version labels are partly static defaults: CI records commit/base/image digests in release artifacts, but those digests are **not automatically proved pinned into every runtime manifest**. Configuration/policy snapshots and replay completeness need source-owner acceptance testing.
+
+SQL ListRuns exposes only the newest 100, not unlimited pagination/export. PreviousRunId/PreviousBrief supports report comparisons when present; first baseline has no previous report. Immutable revisions retain earlier economics unless explicit maintenance deletes them. Full-portfolio deletion must consider documents, embedded evidence/tasks/reports, Blob versions and SQL backups; withdrawing a source is not just deleting its standalone raw blob.
+
+Evidence dates separate publication/period/retrieval/cutoff and conservative availability. SEC restatements keep filing/accession context; do not substitute the newest revised historical number into an old recommendation. Rights can require removing licensed excerpts or embedded facts even when trace metadata remains. Keep a permitted tombstone/withdrawal record and label reduced replay where lawful; no fully implemented automated vendor-withdrawal workflow is claimed.
+
+Forward outcome scoring/calibration is deferred. Define horizon/benchmark/currency/fees, aligned point-in-time prices, corporate actions/delisting/dividends and sufficiently complete valuations/cash flows before calculating outcomes. Preserve screened outside universe and exited instruments when licensed to avoid survivorship bias. Actual user trades remain separate from hypothetical assessments; do not infer causal investment returns or use future knowledge/backfilled successes.
+
+First-release acceptance is inspectable, immutable, qualified research history, not a production backtesting platform. [Data model](data-model.md), [source permissions](data-sources.md), [risk](recommendations-and-risk.md).

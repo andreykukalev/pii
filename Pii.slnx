@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Pii.Application/Pii.Application.csproj" />
+    <Project Path="src/Pii.Domain/Pii.Domain.csproj" />
+    <Project Path="src/Pii.Infrastructure/Pii.Infrastructure.csproj" />
+    <Project Path="src/Pii.Web/Pii.Web.csproj" />
+    <Project Path="src/Pii.Worker/Pii.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Pii.Infrastructure.Tests/Pii.Infrastructure.Tests.csproj" />
+    <Project Path="tests/Pii.Tests/Pii.Tests.csproj" />
+    <Project Path="tests/Pii.Web.Tests/Pii.Web.Tests.csproj" />
+  </Folder>
+</Solution>

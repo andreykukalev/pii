@@ -1,0 +1,18 @@
+@page
+@model ResearchModel
+@{ ViewData["Title"] = "Research"; }
+<div class="page-heading"><div><p class="eyebrow">Theses and outside candidates</p><h1>Research &amp; Watchlist</h1></div><a asp-page="/Runs">Run history</a></div>
+@if (Model.Latest is { Brief: not null } run)
+{
+    <div class="context-line"><span>@run.Mode</span><span>AI: @run.AiStatus</span><span>Run: @run.Status</span><span>Revision @run.Revision</span><span>As of @Display.Time(run.Brief.AsOf)</span><a asp-page="/Run" asp-route-id="@run.Id">Critic, gates and evidence</a></div>
+    <p class="notice">Research categories are informational proposals. Suitability and sized actions are unavailable without explicit policy and complete inputs. Outside candidates are not verified brokerage offerings.</p>
+    @foreach (var held in new[] { true, false })
+    {
+        var assessments = run.Brief.Assessments.Where(item => (run.Facts?.Holdings.Any(holding => holding.InstrumentId == item.InstrumentId && holding.Quantity > 0) == true) == held).ToList();
+        <section class="band"><h2>@(held ? "Held instruments" : "Outside candidates / watchlist")</h2>
+        @if (assessments.Count == 0) { <p class="muted">No published assessments for this scope.</p> }
+        @foreach (var assessment in assessments) { <partial name="_Assessment" model="assessment" /> }
+        </section>
+    }
+}
+else { <section class="empty-state"><h2>No published research</h2><p>Held and outside-candidate assessments will be shown from the latest published brief, with their original mode and source dates.</p><a class="command" asp-page="/Runs">Submit analysis</a></section> }

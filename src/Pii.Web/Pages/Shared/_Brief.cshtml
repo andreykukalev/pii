@@ -1,0 +1,22 @@
+@model InvestmentBrief
+<section class="summary-strip" aria-label="Portfolio known subtotals">
+    <div><span>Known invested value · EUR</span><strong>@Display.Number(Model.Facts.KnownMarketValueEur)</strong><small>Valuation: @Model.Facts.ValuationQuality</small></div>
+    <div><span>Known realized gain · EUR</span><strong class="@Display.Tone(Model.Facts.KnownRealizedGainEur)">@Display.Number(Model.Facts.KnownRealizedGainEur)</strong><small>Known economic FIFO matches only</small></div>
+    <div><span>Known income · EUR</span><strong>@Display.Number(Model.Facts.KnownIncomeEur)</strong><small>Withholding: @Display.Number(Model.Facts.KnownWithholdingEur) EUR</small></div>
+    <div><span>Cash coverage</span><strong class="text-value">@Model.Facts.CashQuality</strong><small>Not a total portfolio P&amp;L</small></div>
+</section>
+<div class="brief-sections">
+@foreach (var briefSection in Model.Sections)
+{
+    <section class="brief-section"><h2>@briefSection.Title</h2><p class="preserve-lines">@briefSection.Body</p></section>
+}
+</div>
+<section class="band"><h2>Supervisor gates</h2><div class="table-scroll"><table><thead><tr><th>Category proposal</th><th>Horizon</th><th>Gate</th><th>Reason</th></tr></thead><tbody>
+@foreach (var gate in Model.Gates)
+{
+    <tr><td>@gate.Category</td><td>@gate.Horizon</td><td>@(gate.Eligible ? "Informational only" : "Not eligible")</td><td>@gate.Reason</td></tr>
+}
+</tbody></table></div></section>
+<section class="band"><h2>Limitations and coverage</h2><ul class="issues">
+@foreach (var issue in Model.Limitations.Concat(Model.Facts.Issues).Distinct()) { <li>@issue</li> }
+</ul><p class="muted">Previous report: @(Model.PreviousRunId ?? "No previous report")</p></section>

@@ -1,0 +1,55 @@
+@page
+@model PortfolioModel
+@{ ViewData["Title"] = "Portfolio"; }
+<div class="page-heading"><div><p class="eyebrow">Confirmed ledger</p><h1>Portfolio</h1></div><a class="command" asp-page="/Imports">Import CSV</a></div>
+<div class="context-line"><span>Revision @Model.Portfolio.Revision</span><span>@Display.Time(Model.Facts.AsOf)</span><span>@(Model.ValuationRun?.Mode.ToString() ?? "No quote run")</span><span>Risk policy: @(Model.Portfolio.Policy.Configured ? "Configured" : "Unconfigured")</span></div>
+<section class="summary-strip">
+    <div><span>Known invested subtotal · EUR</span><strong>@Display.Number(Model.Facts.KnownMarketValueEur)</strong><small>Valuation: @Model.Facts.ValuationQuality</small></div>
+    <div><span>Known realized subtotal · EUR</span><strong class="@Display.Tone(Model.Facts.KnownRealizedGainEur)">@Display.Number(Model.Facts.KnownRealizedGainEur)</strong><small>Not total P&amp;L</small></div>
+    <div><span>Cash coverage</span><strong class="text-value">@Model.Facts.CashQuality</strong><small>Cash valuation: @(Model.Facts.CashValuationQuality?.ToString() ?? "Unavailable")</small></div>
+</section>
+<section class="band"><h2>Holdings</h2>
+@if (Model.Facts.Holdings.Count == 0) { <p class="muted">No confirmed holdings.</p> }
+else
+{
+<div class="table-scroll"><table><thead><tr><th>Instrument</th><th class="numeric">Quantity</th><th class="numeric">Dated price</th><th>Price source / date</th><th class="numeric">Known basis EUR</th><th>Basis quality</th><th class="numeric">Value EUR</th><th class="numeric">Unrealized EUR</th></tr></thead><tbody>
+@foreach (var holding in Model.Facts.Holdings)
+{
+    var instrument = Model.Portfolio.Instruments.FirstOrDefault(item => item.Id == holding.InstrumentId);
+    var quote = Model.ValuationRun?.Quotes.Where(item => item.InstrumentId == holding.InstrumentId && item.AsOf <= Model.Facts.AsOf).OrderByDescending(item => item.AsOf).FirstOrDefault();
+    <tr><td><strong>@(instrument?.Symbol ?? holding.InstrumentId)</strong><small>@holding.InstrumentId · @instrument?.Sector</small></td><td class="numeric">@Display.Quantity(holding.Quantity)</td><td class="numeric">@Display.Number(quote?.Price) @quote?.Currency<small>EUR/unit: @Display.Number(quote?.EurPerUnit)</small></td><td>@Display.Time(quote?.AsOf)<small>@(quote?.EvidenceId ?? "No dated source")</small></td><td class="numeric">@Display.Number(holding.KnownBasisEur)<small>Unknown units: @Display.Quantity(holding.UnknownBasisQuantity)</small></td><td>@holding.BasisQuality<small>Unknown disposal units: @Display.Quantity(holding.UnknownDisposalQuantity)</small></td><td class="numeric">@Display.Number(holding.MarketValueEur)</td><td class="numeric @Display.Tone(holding.UnrealizedGainEur)">@Display.Number(holding.UnrealizedGainEur)</td></tr>
+    @if (holding.Issues.Count > 0) { <tr class="issue-row"><td colspan="8">@string.Join(" ", holding.Issues)</td></tr> }
+}
+</tbody></table></div>
+}
+</section>
+<section class="band"><h2>Native account cash</h2>
+@if (Model.Facts.CashBalances is not { Count: > 0 }) { <p class="muted">CashUnknown: no opening balance and complete cash history supplied.</p> }
+else
+{
+    <div class="table-scroll"><table><thead><tr><th>Currency</th><th class="numeric">Balance</th><th>Coverage</th><th>Coverage from</th><th class="numeric">Value EUR</th><th>Valuation</th><th>FX source / date</th></tr></thead><tbody>
+    @foreach (var balance in Model.Facts.CashBalances)
+    {
+        <tr><td>@balance.Currency</td><td class="numeric">@Display.Number(balance.Balance)</td><td>@balance.BalanceQuality</td><td>@Display.Time(balance.CoverageFrom)</td><td class="numeric">@Display.Number(balance.ValueEur)</td><td>@balance.ValuationQuality</td><td>@balance.FxEvidenceId<small>@Display.Time(balance.FxAsOf)</small></td></tr>
+    }
+    </tbody></table></div>
+}
+<p>Known cash subtotal EUR: @Display.Number(Model.Facts.KnownCashValueEur). Native accounts are separate from invested positions; missing balances are not zero.</p>
+</section>
+<section class="band"><h2>Independent snapshot</h2>
+@if (Model.Reconciliation is { } reconciliation)
+{
+    <div class="context-line"><span>Snapshot as of @Display.Time(reconciliation.AsOf)</span><span>Status: @reconciliation.Status</span></div>
+    <div class="table-scroll"><table><thead><tr><th>Metric</th><th>Instrument</th><th>Native currency</th><th class="numeric">Snapshot</th><th class="numeric">Ledger at cutoff</th><th class="numeric">Difference</th><th>Status</th><th>Reason</th></tr></thead><tbody>
+    @foreach (var item in reconciliation.Items) { <tr><td>@item.Metric</td><td>@item.InstrumentId</td><td>@item.Currency</td><td class="numeric">@Display.Number(item.SnapshotAmount)</td><td class="numeric">@Display.Number(item.LedgerAmount)</td><td class="numeric">@Display.Number(item.Difference)</td><td>@item.Status</td><td>@item.Reason</td></tr> }
+    </tbody></table></div>
+}
+else { <p class="warning">No independent snapshot retained on this revision. A snapshot stored only in an import preview is not a retained revision reconciliation.</p> }
+</section>
+<section class="band"><h2>Coverage</h2><ul class="issues">@foreach (var issue in Model.Facts.Issues) { <li>@issue</li> }</ul><p class="muted">Confirmed @Display.Time(Model.Portfolio.ConfirmedAt) · @Model.Portfolio.Provenance</p><p>Known dividends EUR: @Display.Number(Model.Facts.KnownIncomeEur) · withholding EUR: @Display.Number(Model.Facts.KnownWithholdingEur) · fees EUR: @Display.Number(Model.Facts.KnownFeesEur). Separate economic subtotals, not annual tax or return.</p></section>
+<section class="band"><h2>Normalized transactions</h2><div class="table-scroll"><table><thead><tr><th>Time</th><th>Instrument</th><th>Type</th><th class="numeric">Quantity</th><th class="numeric">Gross</th><th class="numeric">Fee</th><th>Currency</th><th class="numeric">EUR/unit</th><th>Source</th></tr></thead><tbody>
+@foreach (var transaction in Model.Portfolio.Transactions.OrderByDescending(item => item.Time))
+{
+    <tr><td>@Display.Time(transaction.Time)</td><td>@transaction.InstrumentId</td><td>@transaction.Kind</td><td class="numeric">@Display.Quantity(transaction.Quantity)</td><td class="numeric">@Display.Number(transaction.Gross)</td><td class="numeric">@Display.Number(transaction.Fee)</td><td>@transaction.Currency</td><td class="numeric">@Display.Number(transaction.EurPerUnit)</td><td>@transaction.Source</td></tr>
+}
+</tbody></table></div></section>

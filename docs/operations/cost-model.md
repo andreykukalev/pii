@@ -1,0 +1,47 @@
+# Cost Model And Activation Gate
+
+**No verified total at or below USD100/month exists. Deployment is blocked until an actual dated after-tax regional forecast, peak/no-grant/retry/growth case, headroom and valid explicit authority are recorded.** USD100 is the total planning ceiling, not a quote or enforceable bill cap. Region, tax, currency, grant eligibility, DevOps entitlement, data tier and model rate card remain unverified. Unknown meters are TBD, never zero.
+
+## Minute-Poll Consequence
+
+Selected worker runs `* * * * *` and executes finite `--daily` plus pending/expired work consumption, batch one. A 30-day month has **43,200** scheduled invocations; 31 days has **44,640**. Count startup, private image pulls/cache misses, SQL connection/query time, logs, successful runs, overlaps and failures, not only the one useful daily brief. No Queue polling meter or second database is present, but eliminating Queue is not proof of cheaper operation.
+
+SQL serverless minimum is **0.5 vCore**. One-minute connections can prevent auto-pause despite configured 60-minute pause delay. Price **at least 360 vCore-hours/30 days or 372/31 days** if continuously at the minimum, before memory-driven billing, actual burst/overlap demand, storage, backup, network and tax. `minReplicas=0` does not make SQL/ACR/Blob/log retention free. Do not quote paused-only SQL cost for this architecture.
+
+Illustrative, NOT measured/priced deployment: if an empty invocation takes 20 seconds at 0.25 vCPU and 0.5 GiB, 30-day scheduled no-op work consumes 216,000 vCPU-seconds and 432,000 GiB-seconds. Using only historical indicative public active meters USD0.000024/vCPU-second and USD0.000003/GiB-second yields a **partial compute example USD6.48 before grants/tax**, not the system bill or a verified regional quote. Grant availability/remaining quantities must be checked against all apps/jobs; original low-frequency-plan subtotals are obsolete for this selected cadence. If startup/check takes 60 seconds, triple quantities. Actual useful 10-minute runs and failed/overlapping attempts add to this, not replace empty-check allowance without measurement.
+
+## Worksheet
+
+| Meter | Required normal/peak inputs | Evidence status |
+| --- | --- | --- |
+| Azure SQL GP_S_Gen5 | Selected regional active minimum/memory and max vCore rate; 720/744 active hours sensitivity; storage GB/index growth, backup/restore | TBD; no paused-only assumption |
+| Consumption HTTP | 0.25 vCPU/0.5 GiB, active/startup/cooldown time, requests, actual grants | Workload unmeasured, regional quote/grants TBD |
+| Scheduled finite worker | 43,200/44,640 starts, actual no-op/processing seconds, overlap/recovery, 0.25 vCPU/0.5 GiB | Intended cadence verified in template; live runtime/pulls unmeasured |
+| ACR Basic | Fixed daily SKU charge, retained current/rollback/build image bytes, transfers, cleanup | Indicative old public daily USD0.167 is not a selected quote |
+| GPv2 Hot/LRS Blob | Originals/artifacts/keyring, versions/soft-delete, operations/read/list/pull/restore, retained growth | No expiry for originals; region/volume TBD |
+| Log Analytics | One ingestion path, actual bytes within/beyond quota, retention/query/alerts/exports | Quota is not cost ceiling; regional price TBD |
+| Entra secret custody | Existing app credential rotation; ACA platform references or existing-vault operations | No new paid vault required by default; actual cost TBD |
+| DevOps/CI/artifacts | Hosted entitlement/LocalDB agent availability, Linux+Windows build minutes, large image artifacts/retention | Grant not verified; paid hosted capacity can dominate; no permanent VM assumed |
+| Providers | Actual endpoint weighted credits/subscription/add-ons/renewal, display/analysis/cache/LLM rights, tax/FX | Twelve Data candidate, not selected/purchased; SEC/ECB lack subscription fee but incur compute/network |
+| Azure OpenAI consumption | Complete role/tool-loop tokens, model/version/processing geography/SKU, repair/refusal/retry/uncertain calls | No verified model rates or actual calls; API/capability not pricing evidence |
+| Network/tax/one-offs | Azure/external egress, cross-RG/region/pulls/backup, first deploy/build/restore, actual applicable taxes/currency | TBD, never universally zero |
+
+Record worksheet date, billing subscription/currency/region, price source and validity, tax assumptions, quantities/formulas, eligibility proof, measured versus hypothetical labels, normal subtotal, stress subtotal and unused headroom. Do not publish secrets or sensitive billing identities. Source rights and rates are external evidence, not template defaults.
+
+Scenario M is retained infrastructure plus qualified deterministic/degraded operation with AI/provider disabled; it is **not the completed AI product**. Scenario R adds the required real held/sector/outside, orchestrator, market/company/ETF, critic/follow-up, supervisor/final-explanation loop and permitted sources. Price all submitted calls/tool schemas/contexts, not one summary-call estimate. Fixed provider subscriptions remain payable even when a technical kill switch denies calls.
+
+Current estimator multiplies prompt/completion tokens by positive per-million input/output USD rates; it does not separately price model-specific cached/reasoning classes. Select a compatible verified rate model or fix/validate the estimator before relying on billing forecasts. Missing usage remains Unknown, not zero. Default USD1/run, USD20/month and USD0.15/call reservation are technical bounds, not observed cost or approved numerical investment policy. Reserve unknown-charge outcomes conservatively; a crash after billing can duplicate cost.
+
+Budget controls deny new discretionary calls, retain reservation totals across cancellation/recovery/deletion, and leave private data/qualified fallback available. Azure budgets/alerts are delayed notifications, not hard caps; application limits do not cap SQL/registry/storage/build/network/tax charges. Logs quota can impair observability. No keepalive, auto tier upgrade, purchased data entitlement or provisioned inference is authorized by this task.
+
+## Vendor Credit Budget
+
+[SqlSourceCreditStore](../../src/Pii.Infrastructure/SqlSourceCreditStore.cs) enforces a separate, explicit positive `DailyMaximumCredits` shared across all Twelve Data requests/workers in one SQL workspace. Approved `EndpointWeights`, positive per-request maximum and a reviewed rate-card version are required; defaults do not infer a subscription quota or endpoint rates. One actual HTTP attempt reserves a new GUID before I/O; SQL uses its server UTC date, not caller/evidence dates. Serializable transactions and bounded pre-I/O transaction retries protect concurrent daily admission. Accepted entries are conservatively `ChargedUncertain` and never refunded after HTTP errors, cancellation, timeout or crash. Duplicate IDs neither consume twice nor authorize another HTTP request. There is no adapter HTTP retry.
+
+These are **original integer vendor credit counts**, not USD. `SourceCreditDays.ConsumedCredits` is bigint and the configured daily maximum is a positive int. Neither is added to `BudgetMonths.TotalUsd`, reported as a monetary charge, or taken as provider-reported usage. Fixed subscriptions, add-ons, vendor per-minute limits, reset timezone differences, taxes and possible billing charges still require the separate dated forecast and entitlement evidence. The shared fixed-vendor ledger conservatively covers all keys in the workspace and cannot establish usage spent outside this application/database.
+
+Quota changes preserve consumption in the existing SQL day. A lower maximum blocks further spending when already exhausted; an explicitly authorized increase permits only the difference. Keep all workers on the same reviewed quota while changing it. Portfolio deletion preserves both daily native credits and monthly USD reservations; uncertain spend is not made available again by deleting/restarting a run or portfolio. Credit rows have no portfolio/payload/secret content and no portfolio cascade. Include daily rows/entry indexes, durable growth and extra reservation transaction latency/SQL active time in normal/peak database costing. No automatic credit-record cleanup policy is implemented.
+
+Indefinite evidence/title/derived-history retention requires explicit `EvidenceRetentionAuthorized` permission. There is no source cache TTL, automatic expiry or termination-withdrawal implementation in this slice. If rights require finite retention or unavailable automated withdrawal, leave activation denied; do not cost presumed cache savings or claim expiry compliance. SEC larger companyfacts retrieval is separately approved/bounded at most 8 MiB, not an unlimited response/memory promise. Actual Live vendor/model/Azure calls and quota accuracy remain NotRun/unverified. [Source controls](../architecture/data-sources.md) and [existing-schema upgrade](deployment.md) describe activation prerequisites.
+
+Review triggers: first actual invoice, SQL active/memory hours differing from forecast, no-op latency/pull misses, growth/restore month, lost grant, model/provider price/rights change, or minimum genuine live slice exceeding the ceiling. Reallocate only within approved total/headroom; otherwise block activation. See [ADR-005](../adr/005-finite-database-polling.md), [ADR-006](../adr/006-sql-serverless.md).

@@ -1,0 +1,54 @@
+@page
+@model ImportsModel
+@{ ViewData["Title"] = "Imports"; }
+<div class="page-heading"><div><p class="eyebrow">Preview before committing</p><h1>Imports</h1></div><a class="command secondary" asp-page="/Sample"><i class="icon icon-download" aria-hidden="true"></i> Sample CSV</a></div>
+<div class="context-line"><span>Active revision @Model.Portfolio.Revision</span><span>Neutral trade/cash and snapshot CSV</span><span>Revolut CSV/PDF compatibility: unverified</span></div>
+<div asp-validation-summary="All"></div>
+<section class="band"><h2>Upload ledger or independent snapshot</h2><p>Neutral sample schemas only, maximum 2 MiB. Original uploads are retained privately. Real broker CSV/PDF statements remain unverified.</p>
+<p><a asp-page-handler="CashSample"><i class="icon icon-download" aria-hidden="true"></i> Native cash ledger sample</a> · <a asp-page-handler="SnapshotSample"><i class="icon icon-download" aria-hidden="true"></i> Independent dated snapshot sample</a></p>
+<form method="post" enctype="multipart/form-data" asp-page-handler="Upload">
+    <label asp-for="Upload">CSV file</label><input asp-for="Upload" type="file" accept=".csv,text/csv" required />
+    <button type="submit"><i class="icon icon-file-search" aria-hidden="true"></i> Preview import</button>
+</form>
+<details><summary>Sample facts and provenance</summary><div><p>SAMPLE:XNAS:USD is synthetic, not a real ticker or verified Revolut offering. Historical fixture FX is not current market data. The original trade-only sample has unknown cash. The native cash sample explicitly opens USD 2,000 and declares complete cash history; its independent January 3 snapshot observes 8 units and USD 1,237. Economic FIFO basis is EUR 721.44 and realized gain EUR 39.52 for those inputs. A snapshot never supplies missing basis or cash history.</p></div></details>
+</section>
+@if (Model.Preview is { } preview)
+{
+    <section class="band"><h2>Import preview</h2><dl class="manifest"><dt>Format</dt><dd>@preview.Format</dd><dt>Baseline</dt><dd>@preview.BaselineRevision → proposed @(preview.BaselineRevision + 1)</dd><dt>Candidate revision transactions</dt><dd>@preview.ProposedTransactions.Count (including existing baseline)</dd><dt>Duplicates</dt><dd>@preview.DuplicateCount</dd><dt>Received</dt><dd>@Display.Time(preview.CreatedAt)</dd><dt>Content hash</dt><dd>@preview.Hash</dd><dt>Original</dt><dd><a asp-page="/Artifact" asp-route-kind="original" asp-route-id="@preview.Id">Download private original</a></dd></dl>
+    @if (preview.BaselineRevision != Model.Portfolio.Revision) { <p class="warning">Stale baseline. Upload again to review the current revision.</p> }
+    @if (preview.Issues.Count > 0) { <ul class="issues warning">@foreach (var issue in preview.Issues) { <li>@issue</li> }</ul> }
+    else if (preview.Reconciliation is null) { <p class="notice">No blocking parser/duplicate conflicts. No independent snapshot supplied; ledger parsing alone does not verify ownership, cash or complete history.</p> }
+    @if (preview.Reconciliation is { } reconciliation)
+    {
+        <h3>Independent snapshot comparison</h3>
+        <div class="context-line"><span>As of @Display.Time(reconciliation.AsOf)</span><span>Ledger revision @reconciliation.LedgerRevision</span><span>Status: @reconciliation.Status</span></div>
+        @if (reconciliation.RequiresAcknowledgment) { <p class="warning">Unknown comparisons are unverified, not matches. Explicit acknowledgement of missing coverage is required.</p> }
+        <div class="table-scroll"><table><thead><tr><th>Metric</th><th>Instrument</th><th>Native currency</th><th class="numeric">Snapshot</th><th class="numeric">Ledger at cutoff</th><th class="numeric">Difference</th><th>Status</th><th>Evidence / reason</th></tr></thead><tbody>
+        @foreach (var item in reconciliation.Items)
+        {
+            <tr><td>@item.Metric</td><td>@item.InstrumentId</td><td>@item.Currency</td><td class="numeric">@Display.Number(item.SnapshotAmount)</td><td class="numeric">@Display.Number(item.LedgerAmount)</td><td class="numeric">@Display.Number(item.Difference)</td><td>@item.Status</td><td>@item.Reason<small>@item.Source</small></td></tr>
+        }
+        </tbody></table></div>
+        <p class="muted">Observation retained in this import preview. Confirmed-revision snapshot retention requires the pending persistence integration.</p>
+    }
+    <div class="table-scroll"><table><thead><tr><th>ID</th><th>Instrument</th><th>Time</th><th>Type</th><th class="numeric">Quantity</th><th class="numeric">Gross</th><th class="numeric">Fee</th><th>Currency</th><th class="numeric">EUR/unit</th></tr></thead><tbody>
+    @foreach (var transaction in preview.ProposedTransactions)
+    {
+        <tr><td>@transaction.Id</td><td>@transaction.InstrumentId</td><td>@Display.Time(transaction.Time)</td><td>@transaction.Kind</td><td class="numeric">@Display.Quantity(transaction.Quantity)</td><td class="numeric">@Display.Number(transaction.Gross)</td><td class="numeric">@Display.Number(transaction.Fee)</td><td>@transaction.Currency</td><td class="numeric">@Display.Number(transaction.EurPerUnit)</td></tr>
+    }
+    </tbody></table></div>
+    @if (Model.ProposedFacts is { } facts)
+    {
+        <h3>Provisional holdings · no price inputs</h3><p class="muted">Facts cutoff: @Display.Time(facts.AsOf)</p><div class="table-scroll"><table><thead><tr><th>Instrument</th><th class="numeric">Quantity</th><th class="numeric">Known basis EUR</th><th>Basis quality</th><th>Reconstruction issues</th></tr></thead><tbody>
+        @foreach (var holding in facts.Holdings) { <tr><td>@holding.InstrumentId</td><td class="numeric">@Display.Quantity(holding.Quantity)</td><td class="numeric">@Display.Number(holding.KnownBasisEur)</td><td>@holding.BasisQuality</td><td>@string.Join(" ", holding.Issues)</td></tr> }
+        </tbody></table></div>
+        <h3>Native account cash</h3><div class="table-scroll"><table><thead><tr><th>Currency</th><th class="numeric">Balance</th><th>Coverage</th><th>Coverage from</th><th>Valuation quality</th></tr></thead><tbody>
+        @foreach (var balance in facts.CashBalances ?? []) { <tr><td>@balance.Currency</td><td class="numeric">@Display.Number(balance.Balance)</td><td>@balance.BalanceQuality</td><td>@Display.Time(balance.CoverageFrom)</td><td>@balance.ValuationQuality</td></tr> }
+        </tbody></table></div><ul class="issues">@foreach (var issue in facts.Issues) { <li>@issue</li> }</ul>
+    }
+    <form method="post" asp-page-handler="Confirm">
+        <input asp-for="PreviewId" type="hidden" /><input asp-for="BaselineRevision" type="hidden" />
+        <label class="check"><input asp-for="Acknowledge" required /> <span>I reviewed the proposed ledger and independent comparison, acknowledge every Unknown or missing holdings/history/cash check as unverified, and confirm this revision. Accepted work may use the configured analysis budget.</span></label>
+        <button type="submit" disabled="@(preview.Issues.Count > 0 || preview.Reconciliation?.Status == ReconciliationStatus.Mismatch || preview.BaselineRevision != Model.Portfolio.Revision)"><i class="icon icon-check" aria-hidden="true"></i> Confirm import</button>
+    </form></section>
+}

@@ -1,0 +1,212 @@
+trigger:
+  branches:
+    include: [main]
+pr:
+  branches:
+    include: [main]
+
+parameters:
+  - name: deploy
+    type: boolean
+    default: false
+  - name: deployWorkloads
+    type: boolean
+    default: false
+
+variables:
+  DotNetSdkVersion: '10.0.401'
+  DeploymentName: 'pii-release'
+
+stages:
+  - stage: Build
+    displayName: Offline Tests And Deployment Artifacts
+    jobs:
+      - job: Tests
+        pool:
+          vmImage: windows-2022
+        steps:
+          - checkout: self
+            persistCredentials: false
+          - task: UseDotNet@2
+            inputs:
+              packageType: sdk
+              version: $(DotNetSdkVersion)
+          - powershell: |
+              $ErrorActionPreference = 'Stop'
+              if ((dotnet --version) -ne '$(DotNetSdkVersion)') { throw 'Exact SDK required.' }
+              if (-not (Test-Path Pii.slnx)) { throw 'Pii.slnx must be supplied by the source owner; do not silently test a partial project set.' }
+              if (-not (Get-Command SqlLocalDB.exe -ErrorAction SilentlyContinue)) { throw 'Actual SQL tests require LocalDB on the Windows agent; configure an eligible existing agent, do not skip the tests.' }
+              SqlLocalDB.exe start MSSQLLocalDB
+              if ($LASTEXITCODE -ne 0) { throw 'LocalDB start failed.' }
+              ./infra/validation/Test-SchemaBootstrap.ps1
+              dotnet restore Pii.slnx -p:NuGetAudit=true -p:NuGetAuditMode=all -p:NuGetAuditLevel=low
+              if ($LASTEXITCODE -ne 0) { throw 'Restore/audit failed.' }
+              dotnet build Pii.slnx --configuration Release --no-restore -p:ContinuousIntegrationBuild=true
+              if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
+              dotnet test Pii.slnx --configuration Release --no-build --no-restore --logger trx --results-directory "$(Agent.TempDirectory)/TestResults"
+              if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
+            displayName: Build And Test The Complete Solution With Actual LocalDB
+          - powershell: |
+              $ErrorActionPreference = 'Stop'
+              New-Item -ItemType Directory -Force "$(Build.ArtifactStagingDirectory)/audit" | Out-Null
+              dotnet list Pii.slnx package --vulnerable --include-transitive --format json --output-version 1 --no-restore | Out-File -Encoding utf8 "$(Build.ArtifactStagingDirectory)/audit/packages.json"
+              if ($LASTEXITCODE -ne 0) { throw 'Dependency audit failed.' }
+              $audit = Get-Content "$(Build.ArtifactStagingDirectory)/audit/packages.json" -Raw | ConvertFrom-Json
+              $findings = @($audit.projects.frameworks.topLevelPackages.vulnerabilities) + @($audit.projects.frameworks.transitivePackages.vulnerabilities)
+              if (@($findings | Where-Object { $null -ne $_ }).Count -gt 0) { throw 'Known dependency vulnerabilities block the release.' }
+              ./infra/validation/Test-TrackedSecrets.ps1
+            displayName: Transitive NuGet Audit And Credential Signatures
+          - task: PublishTestResults@2
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: VSTest
+              testResultsFiles: '$(Agent.TempDirectory)/TestResults/*.trx'
+              failTaskOnFailedTests: true
+          - publish: $(Build.ArtifactStagingDirectory)/audit
+            artifact: dependency-audit
+      - job: ContainersAndIaC
+        pool:
+          vmImage: ubuntu-24.04
+        steps:
+          - checkout: self
+            persistCredentials: false
+          - bash: |
+              set -euo pipefail
+              az bicep install --version v0.48.1
+              mkdir -p "$(Build.ArtifactStagingDirectory)/release"
+              az bicep build --file infra/main.bicep --outfile "$(Build.ArtifactStagingDirectory)/release/main.json"
+            displayName: Local Bicep Compilation Without Azure Login
+          - pwsh: |
+              ./infra/validation/Test-IaC.ps1
+              ./infra/validation/Test-ParameterGates.ps1
+            displayName: Offline Infrastructure Contract Checks
+          - bash: |
+              set -euo pipefail
+              out="$(Build.ArtifactStagingDirectory)/release"
+              docker pull --platform linux/amd64 mcr.microsoft.com/dotnet/sdk:10.0
+              docker pull --platform linux/amd64 mcr.microsoft.com/dotnet/aspnet:10.0
+              sdk=$(docker image inspect --format '{{index .RepoDigests 0}}' mcr.microsoft.com/dotnet/sdk:10.0)
+              runtime=$(docker image inspect --format '{{index .RepoDigests 0}}' mcr.microsoft.com/dotnet/aspnet:10.0)
+              [[ "$sdk" == *@sha256:* && "$runtime" == *@sha256:* ]]
+              printf 'SDK_IMAGE=%s\nASPNET_IMAGE=%s\nSDK_VERSION=%s\nCOMMIT=%s\n' "$sdk" "$runtime" '$(DotNetSdkVersion)' '$(Build.SourceVersion)' > "$out/base-images.txt"
+              for host in web worker; do
+                docker build --platform linux/amd64 --pull --build-arg SDK_IMAGE="$sdk" --build-arg ASPNET_IMAGE="$runtime" --build-arg SDK_VERSION='$(DotNetSdkVersion)' --label org.opencontainers.image.revision='$(Build.SourceVersion)' -f "Dockerfile.$host" -t "pii/$host:$(Build.BuildId)" .
+                uid=$(docker image inspect --format '{{.Config.User}}' "pii/$host:$(Build.BuildId)")
+                [[ -n "$uid" && "$uid" != 0 && "$uid" != root ]]
+                docker run --rm --entrypoint dotnet "pii/$host:$(Build.BuildId)" --list-runtimes > "$out/$host-runtimes.txt"
+                grep -q 'Microsoft.AspNetCore.App 10.0.' "$out/$host-runtimes.txt"
+                docker image inspect --format '{{.Id}}' "pii/$host:$(Build.BuildId)" > "$out/$host-local-image-id.txt"
+                docker save "pii/$host:$(Build.BuildId)" -o "$out/$host.tar"
+              done
+              cp -R infra "$out/infra"
+              cp Dockerfile.web Dockerfile.worker .dockerignore "$out/"
+            displayName: Resolve Base Digests Build Nonroot Linux Images And Record Evidence
+          - publish: $(Build.ArtifactStagingDirectory)/release
+            artifact: release
+
+  - stage: WhatIf
+    displayName: Authorized Registry Push And Resource Change Preview
+    dependsOn: Build
+    condition: and(succeeded(), ${{ eq(parameters.deploy, true) }}, eq(variables['PiiDeploymentAuthority'], 'true'), eq(variables['PiiAfterTaxForecastApproved'], 'true'), ne(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - job: Preview
+        pool:
+          vmImage: ubuntu-24.04
+        steps:
+          - checkout: none
+          - download: current
+            artifact: release
+          - task: DownloadSecureFile@1
+            name: parametersFile
+            inputs:
+              secureFile: $(DeploymentParametersSecureFile)
+          - task: AzureCLI@2
+            inputs:
+              azureSubscription: $(AzureServiceConnection)
+              scriptType: bash
+              scriptLocation: inlineScript
+              addSpnToEnvironment: false
+              inlineScript: |
+                set -euo pipefail
+                az account show --query id --output tsv > /dev/null
+                out="$(Pipeline.Workspace)/release"
+                scratch="$(Agent.TempDirectory)/pii-parameters.json"
+                trap 'rm -f "$scratch"' EXIT
+                workloads=$(echo '${{ parameters.deployWorkloads }}' | tr '[:upper:]' '[:lower:]')
+                jq --argjson workloads "$workloads" '.parameters.deployWorkloads.value=$workloads' "$(parametersFile.secureFilePath)" > "$scratch"
+                if [[ "$workloads" == true ]]; then
+                  registry='$(RegistryName)'
+                  host=$(az acr show --name "$registry" --resource-group '$(ResourceGroup)' --query loginServer --output tsv)
+                  az acr login --name "$registry" --output none
+                  for app in web worker; do
+                    docker load -i "$out/$app.tar"
+                    image="$host/pii/$app:$(Build.BuildId)"
+                    docker tag "pii/$app:$(Build.BuildId)" "$image"
+                    docker push "$image"
+                    digest=$(az acr repository show --name "$registry" --image "pii/$app:$(Build.BuildId)" --query digest --output tsv)
+                    [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+                    printf '%s=%s/pii/%s@%s\n' "$app" "$host" "$app" "$digest" >> "$out/image-digests.txt"
+                    jq --arg name "${app}Image" --arg image "$host/pii/$app@$digest" '.parameters[$name].value=$image' "$scratch" > "$scratch.next"
+                    mv "$scratch.next" "$scratch"
+                  done
+                fi
+                pwsh -NoProfile -File "$out/infra/validation/Test-DeploymentParameters.ps1" -Path "$scratch"
+                az deployment group what-if --resource-group '$(ResourceGroup)' --name '$(DeploymentName)' --template-file "$out/main.json" --parameters "@$scratch" --result-format ResourceIdOnly --no-pretty-print --output json > "$out/what-if.json"
+                mkdir -p "$out/change-review"
+                cp "$out/what-if.json" "$out/change-review/"
+                if [[ -f "$out/image-digests.txt" ]]; then cp "$out/image-digests.txt" "$out/change-review/"; fi
+            displayName: WIF Preview No Credentials Or Parameter Values Printed
+          - publish: $(Pipeline.Workspace)/release/change-review
+            artifact: change-review
+
+  - stage: Apply
+    displayName: Environment Approved Apply
+    dependsOn: WhatIf
+    condition: and(succeeded(), ${{ eq(parameters.deploy, true) }}, eq(variables['PiiDeploymentAuthority'], 'true'), eq(variables['PiiAfterTaxForecastApproved'], 'true'))
+    jobs:
+      - deployment: ApplyApprovedChanges
+        pool:
+          vmImage: ubuntu-24.04
+        environment: $(DeploymentEnvironment)
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: none
+                - download: current
+                  artifact: release
+                - download: current
+                  artifact: change-review
+                - task: DownloadSecureFile@1
+                  name: parametersFile
+                  inputs:
+                    secureFile: $(DeploymentParametersSecureFile)
+                - task: AzureCLI@2
+                  inputs:
+                    azureSubscription: $(AzureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    addSpnToEnvironment: false
+                    inlineScript: |
+                      set -euo pipefail
+                      out="$(Pipeline.Workspace)/release"
+                      review="$(Pipeline.Workspace)/change-review"
+                      scratch="$(Agent.TempDirectory)/pii-parameters.json"
+                      trap 'rm -f "$scratch" "$scratch.next"' EXIT
+                      workloads=$(echo '${{ parameters.deployWorkloads }}' | tr '[:upper:]' '[:lower:]')
+                      jq --argjson workloads "$workloads" '.parameters.deployWorkloads.value=$workloads' "$(parametersFile.secureFilePath)" > "$scratch"
+                      if [[ "$workloads" == true ]]; then
+                        test -s "$review/image-digests.txt"
+                        while IFS='=' read -r app image; do
+                          [[ "$app" == web || "$app" == worker ]]
+                          jq --arg name "${app}Image" --arg image "$image" '.parameters[$name].value=$image' "$scratch" > "$scratch.next"
+                          mv "$scratch.next" "$scratch"
+                        done < "$review/image-digests.txt"
+                      fi
+                      pwsh -NoProfile -File "$out/infra/validation/Test-DeploymentParameters.ps1" -Path "$scratch"
+                      az deployment group what-if --resource-group '$(ResourceGroup)' --name '$(DeploymentName)' --template-file "$out/main.json" --parameters "@$scratch" --result-format ResourceIdOnly --no-pretty-print --output json > "$(Agent.TempDirectory)/pii-final-what-if.json"
+                      jq -S '.changes | map({resourceId,changeType}) | sort_by(.resourceId)' "$review/what-if.json" > "$(Agent.TempDirectory)/pii-approved-changes.json"
+                      jq -S '.changes | map({resourceId,changeType}) | sort_by(.resourceId)' "$(Agent.TempDirectory)/pii-final-what-if.json" > "$(Agent.TempDirectory)/pii-final-changes.json"
+                      cmp "$(Agent.TempDirectory)/pii-approved-changes.json" "$(Agent.TempDirectory)/pii-final-changes.json"
+                      az deployment group create --resource-group '$(ResourceGroup)' --name '$(DeploymentName)' --template-file "$out/main.json" --parameters "@$scratch" --output none --only-show-errors
+                  displayName: Recheck Approved Change Set And Apply Without Secret Output

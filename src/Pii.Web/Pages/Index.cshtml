@@ -1,0 +1,27 @@
+@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Brief";
+}
+<div class="page-heading"><div><p class="eyebrow">Daily perspective</p><h1>Investment Brief</h1></div><a class="command" asp-page="/Runs"><i class="icon icon-plus" aria-hidden="true"></i> New analysis</a></div>
+@if (Model.Latest is { Brief: not null } latest)
+{
+    <div class="context-line"><span>Revision @latest.Revision</span><span>@Display.Time(latest.Brief.AsOf)</span><span>@latest.Mode</span><span>AI: @latest.AiStatus</span><span>Run: @latest.Status</span><a asp-page="/Run" asp-route-id="@latest.Id">Execution record</a></div>
+    <partial name="_Brief" model="latest.Brief" />
+}
+else
+{
+    <section class="empty-state"><h2>No published brief</h2><p>Confirmed portfolio and research results will appear here. The ledger is empty until an import is explicitly confirmed.</p><div class="actions"><a class="command" asp-page="/Imports">Import CSV</a><a asp-page="/Portfolio">View portfolio</a></div></section>
+}
+<section class="band"><div class="section-heading"><h2>Recent activity</h2><a asp-page="/Runs">All runs</a></div>
+@if (Model.Recent.Count == 0) { <p class="muted">No analysis runs.</p> }
+else
+{
+    <div class="table-scroll"><table><thead><tr><th>Created</th><th>Revision</th><th>Mode</th><th>Status</th><th>AI status</th><th>Record</th></tr></thead><tbody>
+    @foreach (var run in Model.Recent)
+    {
+        <tr><td>@Display.Time(run.CreatedAt)</td><td>@run.Revision</td><td>@run.Mode</td><td>@run.Status</td><td>@run.AiStatus</td><td><a asp-page="/Run" asp-route-id="@run.Id">Open</a></td></tr>
+    }
+    </tbody></table></div>
+}
+</section>

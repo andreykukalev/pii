@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="../Pii.Application/Pii.Application.csproj" />
+    <ProjectReference Include="../Pii.Infrastructure/Pii.Infrastructure.csproj" />
+    <Content Include="appsettings*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": { "value": "REPLACE_WITH_AUTHORIZED_LOCATION" },
+    "tenantId": { "value": "00000000-0000-0000-0000-000000000000" },
+    "allowedObjectId": { "value": "00000000-0000-0000-0000-000000000000" },
+    "webClientId": { "value": "00000000-0000-0000-0000-000000000000" },
+    "sqlAdminObjectId": { "value": "00000000-0000-0000-0000-000000000000" },
+    "sqlAdminName": { "value": "REPLACE_WITH_EXISTING_ENTRA_ADMIN" },
+    "deployWorkloads": { "value": false },
+    "sqlAllowAzureServices": { "value": false },
+    "createFoundryAccount": { "value": false },
+    "createModelDeployment": { "value": false },
+    "liveAuthorized": { "value": false },
+    "modelProcessingAuthorized": { "value": false },
+    "modelSupportsStrictSchemaAndTools": { "value": false },
+    "secRightsAuthorized": { "value": false },
+    "secCompanyFactsMaximumBytes": { "value": 1048576 },
+    "secCompanyFactsLargerResponseAuthorized": { "value": false },
+    "ecbRightsAuthorized": { "value": false },
+    "twelveDataRightsAuthorized": { "value": false },
+    "twelveDataEvidenceRetentionAuthorized": { "value": false },
+    "twelveDataRequestCreditsAuthorized": { "value": false },
+    "twelveDataRateCardVersion": { "value": "" },
+    "twelveDataMaximumCreditsPerRequest": { "value": 0 },
+    "twelveDataDailyMaximumCredits": { "value": 0 },
+    "twelveDataEndpointWeights": { "value": {} },
+    "twelveDataEntitlements": { "value": [] },
+    "candidateCatalog": { "value": [] }
+  }
+}

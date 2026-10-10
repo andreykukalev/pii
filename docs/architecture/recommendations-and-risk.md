@@ -1,0 +1,13 @@
+# Recommendations And Risk
+
+Six assessment categories: BUY, HOLD, REDUCE, SELL, REVIEW and WATCHLIST, with separate LongTerm and Tactical horizons. No-action is valid. Every trade remains manual; no broker integration or execution authority exists.
+
+[Deterministic policy](../../src/Pii.Domain/Portfolio.cs) is independent of model prose. RiskPolicy defaults Version 0/unconfigured; a model cannot set it or fabricate position/tactical limits. BUY/REDUCE/SELL require configured policy, supported thesis, complete scenario inputs and a proposed position percentage within explicit limits. Current supervisor supplies no generated sizing/scenario percentage, so this is **not a completed sizing or portfolio-suitability workflow**, even when a numerical policy exists. Unsupported HOLD becomes REVIEW.
+
+Supervisor checks the latest successful critic/follow-up disposition, supported citations and facts' valuation/cash quality before accepting eligible conclusions. Unknown cash, basis, valuations, ETF overlap, events or source fields remain limitations, never neutral/zero assumptions. A qualitative balanced preference is not a numerical risk policy. Do not imply a diversification, volatility, correlation, VaR or drawdown computation without its actual aligned history/method implementation.
+
+Claims distinguish sourced fact, derived fact, interpretation, hypothesis and unresolved. Runtime validates ownership/cutoff/processing/citation/numeric references; bounded model prose cannot author factual numbers, which must resolve to trusted source fields. Valid references and JSON are not proof that a cited fact entails the conclusion. Retain counterevidence and uncertainty; critic disagreement is not resolved by majority vote or confidence uplift.
+
+Assessments retain thesis, counterargument, claim references and risks by instrument/horizon. Long-term quality/valuation and tactical catalyst/trend questions remain distinct. Missing ETF/company fields are not filled with invented ratios. Model self-confidence is not a calibrated probability, and recommendations are not profitability, causality or tax claims.
+
+User numerical policy, actual verified instrument availability, independent cash/snapshot reconciliation and adequate price/FX history are separate gates. Useful evidence-backed HOLD/REVIEW/WATCHLIST research can still be delivered with unconfigured policy; an unavailable/failed analysis must never be rendered as a confident action. [Agent platform](agent-platform.md), [acceptance](../product/roadmap-and-acceptance.md).

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><IsTestProject>true</IsTestProject><IsPackable>false</IsPackable><EnableDefaultCompileItems>false</EnableDefaultCompileItems><BaseIntermediateOutputPath>obj/boundary/</BaseIntermediateOutputPath><OutputPath>bin/boundary/</OutputPath></PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5"><PrivateAssets>all</PrivateAssets></PackageReference>
+    <PackageReference Include="Microsoft.Identity.Web" Version="4.16.0" />
+    <ProjectReference Include="../../src/Pii.Application/Pii.Application.csproj" />
+    <Compile Include="BoundaryTests.cs" />
+    <Compile Include="../../src/Pii.Web/Display.cs" Link="Display.cs" />
+    <Compile Include="../../src/Pii.Web/Security/WorkspaceSecurity.cs" Link="WorkspaceSecurity.cs" />
+    <Compile Include="../../src/Pii.Worker/DailySchedule.cs" Link="DailySchedule.cs" />
+    <Compile Include="../../src/Pii.Worker/WorkerCommand.cs" Link="WorkerCommand.cs" />
+    <Using Include="Microsoft.AspNetCore.Builder" />
+    <Using Include="Microsoft.AspNetCore.Hosting" />
+    <Using Include="Microsoft.AspNetCore.Http" />
+    <Using Include="Microsoft.Extensions.Configuration" />
+    <Using Include="Microsoft.Extensions.DependencyInjection" />
+    <Using Include="Microsoft.Extensions.Hosting" />
+    <Using Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+</Project>

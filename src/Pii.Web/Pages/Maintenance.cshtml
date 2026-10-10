@@ -1,0 +1,37 @@
+@page
+@model MaintenanceModel
+@{ ViewData["Title"] = "Maintenance"; }
+<div class="page-heading"><div><p class="eyebrow">Private workspace</p><h1>Maintenance</h1></div><a asp-page="/Settings">Settings</a></div>
+<div asp-validation-summary="All" class="notice"></div>
+@if (Model.DeletionState == Pii.Application.WorkspaceDeletionState.SqlDataDeletedArtifactsPending)
+{
+    <p class="notice" role="alert">Partial deletion: SQL portfolio, previews, revisions and run history were deleted, but artifact cleanup did not complete. Keep workers and submissions stopped. Retry deletion below to finish current-blob cleanup; do not reimport first.</p>
+}
+else if (Model.DeletionState == Pii.Application.WorkspaceDeletionState.CurrentDataDeleted)
+{
+    <p class="notice" role="status">Current SQL investment data and workspace-prefix blobs deleted. Budget reservations and cookie keys remain. This does not verify erasure of backups, prior blob versions, soft-deleted data or downloaded copies.</p>
+}
+<section class="band">
+    <h2>Export investment history</h2>
+    <p>Current immutable portfolio and up to the latest 100 stored runs, with complete embedded evidence, tasks, briefs and usage. Maximum 8 MiB; oversized exports are rejected, not truncated by bytes. Older runs and revisions not pinned in those runs are not included. This is not a restore package.</p>
+    <p>Original files and referenced report or stage artifact bodies are not included. Download available originals individually from <a asp-page="/Imports">Imports</a> and reports from <a asp-page="/Runs">Runs</a>. For older history or larger exports, arrange an authorized administrator export before deletion.</p>
+    <form method="post" asp-page-handler="Export">
+        <input type="hidden" asp-for="ExpectedRevision" />
+        <label><input asp-for="AcceptExportScope" /> I accept the bounded export and have rights to retain its source data and my private downloaded copy.</label>
+        <button type="submit">Download JSON</button>
+    </form>
+</section>
+<section class="band">
+    <h2>Delete workspace</h2>
+    <p>Full-workspace purge only: portfolio, all revisions, import previews, run history and current workspace artifacts. Source withdrawal or expired retention rights can require this purge because selective provider deletion and automatic licensed-data expiry are not implemented. Do not treat removing a source blob as withdrawing embedded evidence.</p>
+    <p>Cancel research in <a asp-page="/Runs">Runs</a> and let workers settle, then stop scheduled and on-demand worker processes and pause all other imports or submissions. Running rows, including expired claims, block deletion. Worker shutdown and exclusive access are operator prerequisites, not enforced by this page.</p>
+    <p class="notice">Deletion removes audit and reconstruction inputs, not just the current view. No application restore is provided. Storage administrators must separately review previous versions, soft-delete, SQL backups and licensed expiry; erasure of these and your downloaded copies cannot be guaranteed here. Monthly AI and source-credit budgets and cookie keys are not reset.</p>
+    <form method="post" asp-page-handler="Delete">
+        <input type="hidden" asp-for="ExpectedRevision" />
+        <p><label><input asp-for="ExclusiveMaintenance" /> All worker processes have exited and other workspace submissions are paused.</label></p>
+        <p><label><input asp-for="AcceptPermanentLoss" /> I accept loss of investment history and reconstruction inputs and the backup/version/copy limitations.</label></p>
+        <p><label asp-for="Confirmation">Confirmation</label><input asp-for="Confirmation" autocomplete="off" maxlength="32" /></p>
+        <p>Required confirmation: DELETE WORKSPACE</p>
+        <button type="submit">Delete workspace</button>
+    </form>
+</section>
