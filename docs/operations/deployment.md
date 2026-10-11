@@ -2,6 +2,14 @@
 
 **No Azure login, provisioning, purchases, hosted pipeline run or model/provider calls were performed in this task.** Templates are locally compiled; deploy defaults false. Resolve [readiness blockers](readiness.md), a dated after-tax forecast within USD100, service entitlement and explicit resource authority before any authenticated apply or push. Even infrastructure-only deployment creates charges.
 
+## Independent Stages
+
+The preferred incremental workflow is now [infra/README.md](../../infra/README.md), with subscription RG-only foundation, independent modern Foundry, private storage, SQL data, optional monitoring, compute infrastructure and separate application entrypoints. [The local Azure dependency guide](../../infra/local/README.md) and [exact-key templates](../../infra/local/appsettings.Development.json.example) cover developer Entra auth and coordinated host changes. Default `deploy-all` excludes compute/application and skips disabled monitoring. Foundry account/project provisioning is not model activation; model deployment defaults OFF.
+
+The remainder of this document retains the **legacy main/pipeline** procedure and schema/source/rollback contracts. The unchanged pipeline still invokes the combined main template, which creates compute infrastructure even with workloads disabled; it is **not** the incremental wrapper workflow. New application-stage workloads bind already-created environment/registry/UAMIs and preserve the existing key schema; worker schedule and workloads default OFF independently. Never mix the two resource owners without the explicit legacy-name migration inventory. Secure staged parameter files differ from the old flat pipeline file.
+
+Local-only incremental verification: `./infra/validation/Test-ModularStages.ps1`, `./infra/validation/Test-DeploymentWrappers.ps1`, `./infra/validation/Test-LocalIntegrationTemplates.ps1`, and `deploy-all.ps1 -SubscriptionId <actual-guid> -ManifestPath <private-path> -Action Validate -Offline`. Omit `-Offline` only for independently authorized ARM validation. All Apply actions require `-AuthorizeApply -AcknowledgeCost`; no wrapper logs in/registers providers/starts jobs/builds images/extracts keys/deletes data.
+
 ## Local Prerequisites
 
 SDK **10.0.401** is locally confirmed; [SDK selection](../../global.json) belongs to the main source owner. Azure CLI local Bicep compiler 0.48.1 was installed/used without Azure login. Windows SQL LocalDB is the selected adapter's development/test service; Azurite Blob is required for a durable local workflow. Do not replace production SQL with SQLite or deploy a second database. Docker is absent here; Linux publish succeeded, but image build/runtime checks remain NotRun locally.
@@ -68,7 +76,7 @@ Twelve Data additionally requires explicit `twelveDataRequestCreditsAuthorized`,
 
 Daily credits are shared across workers in SQL using the server's UTC day. Deploy reviewed quota changes consistently to all workers and drain old revisions; a changed maximum never resets consumed credits. HTTP failure/timeout/cancellation/crash retains `ChargedUncertain` entries with no automatic refund or retry-ID reuse. The ledger is not a vendor per-minute rate limiter, provider-reported usage or a USD budget. Test the worker's specific SELECT/INSERT/UPDATE access in the real environment before paid activation; template/local verification alone does not establish Azure grants or licensed behavior.
 
-**Source binding blocker:** do not copy worker model/provider configuration into web to make runs pass. Resolve the run ModelBinding contract in source first; otherwise web-submitted runs can fail before research. [Readiness](readiness.md) lists other essential gaps.
+**ModelBinding ownership:** the approved plan records the source fix that stamps the binding on first worker claim. Do not copy worker model/provider configuration into web. Main-owner regression tests and actual web-submitted worker acceptance remain separate evidence; [readiness](readiness.md) lists remaining gaps.
 
 ## CI And Rollback
 

@@ -2,6 +2,25 @@
 
 **No verified total at or below USD100/month exists. Deployment is blocked until an actual dated after-tax regional forecast, peak/no-grant/retry/growth case, headroom and valid explicit authority are recorded.** USD100 is the total planning ceiling, not a quote or enforceable bill cap. Region, tax, currency, grant eligibility, DevOps entitlement, data tier and model rate card remain unverified. Unknown meters are TBD, never zero.
 
+## Incremental Cost Scenarios
+
+[The independent stages](../../infra/README.md) make local+Azure dependency experiments distinct from hosted operation. Default all creates only selected foundation/Foundry/storage/SQL; monitoring OFF, compute/application excluded. A new AIServices S0 account/project does not deploy a model by default and no hosted-agent capability is included. Confirm account/project-specific meters/terms rather than asserting an empty account is universally free. An existing model/source subscription still incurs its outside-use/fixed charges even when this application disables calls.
+
+Use dated **regional calculator/rate-card inputs**, not a blind dollar quote. For each normal and stress month record quantity, units, current price/date, selected SKU, tax/FX, grant eligibility/remaining amount, one-off charges and headroom. Define `days=D`, active SQL hours `H`, token counts and measured worker startup/processing; missing rates stay TBD. Formulas before actual applicable tax/FX:
+
+| Component | Formula / risk inputs |
+| --- | --- |
+| SQL serverless | Sum billed active compute/memory-derived vCore-seconds /3600 * regional vCore-hour rate + DB GiB-month * storage rate + backup/restore. At minimum0.5 active continuously, vCore-hours >=0.5*24*D; max1/2/4 permits burst charges. AutoPause60 is no saving guarantee |
+| Optional SQL Basic | 24*D * quoted **Basic 5-DTU fixed hour rate** + applicable backup/other charges, max2GiB configured. No serverless min/auto-pause properties; do not multiply DTU by vCore rate |
+| Foundry complete research | Sum separately priced input/output/eligible cached/reasoning token quantities divided by rate-card unit * corresponding rates, plus failed/uncertain/schema-repair/retry/headroom. All orchestrator/specialists/critic/supervisor/tool contexts count, not one summary |
+| Blob | Retained GiB-month originals+artifacts+versions+soft-delete * tier/redundancy rate + operations by class + Cool retrieval/restore/egress. LRS Hot default; GRS/GZRS and retained growth add charges; originals are not auto-deleted to meet a bill target |
+| Optional monitoring | Sampled app+platform ingested GiB * workspace rate + chargeable retention/query/export/alerts. Daily quota can overshoot and disable visibility; not a hard billing cap. No default monitoring/diagnostics/paid tests |
+| Hosted compute | Sum active allocated vCPU-seconds/GiB-seconds (startup/pulls/cooldown/overlap included) * verified meters plus requests and applicable idle time, subtract only verified remaining grants. Web min0/max1 default; min>0 and high max replicas increase risk |
+| Registry/CI/network | D * selected registry daily rate + image capacity/transfer/build costs + actual hosted CI entitlement/capacity + artifacts/egress. Basic default; reviewed Standard/Premium can dominate personal budget |
+| Total | Dependency subtotal + optional monitoring + hosted subtotal if selected + providers/model calls + one-offs/network + actual taxes/FX + contingency <=USD100 **forecast gate**, not an invoice guarantee |
+
+Local hosts with infrequent explicitly invoked workers may let SQL pause, but open connections, tooling/admin queries and interactive sessions can prevent it. Hosted scheduled polling is a separate workload: job scheduling defaults OFF in the application stage; enabling the retained minute cron invokes the sensitivity below. A Manual job does not run until separately started, and compute creates no job at all. Existing scheduled jobs are not stopped by simply omitting them from an incremental template. Reject unsupported SKUs/CPU pairs/Basic storage; do not silently substitute premium/dedicated/PTU. No HA/NAT/private networking, budget resource or automatic auth/provider registration is hidden in default stages. Optional operator budget alerts require their own reviewed scope/contact and are notifications only.
+
 ## Minute-Poll Consequence
 
 Selected worker runs `* * * * *` and executes finite `--daily` plus pending/expired work consumption, batch one. A 30-day month has **43,200** scheduled invocations; 31 days has **44,640**. Count startup, private image pulls/cache misses, SQL connection/query time, logs, successful runs, overlaps and failures, not only the one useful daily brief. No Queue polling meter or second database is present, but eliminating Queue is not proof of cheaper operation.

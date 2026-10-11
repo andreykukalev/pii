@@ -12,6 +12,40 @@ public sealed class ConfigurationTests
     private static IConfiguration Configuration(Dictionary<string, string?>? values = null) => new ConfigurationBuilder().AddInMemoryCollection(values ?? []).Build();
 
     [Fact]
+    public void DevelopmentAcceptsExplicitAzureBlobWithoutOpeningNetwork()
+    {
+        using var provider = new ServiceCollection().AddPiiInfrastructure(Configuration(new()
+        {
+            ["Pii:Blob:ServiceUri"] = "https://recorded.blob.core.windows.net/"
+        }), true).BuildServiceProvider();
+        Assert.IsType<BlobArtifactStore>(provider.GetRequiredService<IArtifactStore>());
+    }
+
+    [Theory]
+    [InlineData("http://recorded.blob.core.windows.net/")]
+    [InlineData("https://attacker.test/")]
+    [InlineData("https://recorded.blob.core.windows.net/container")]
+    public void DevelopmentDoesNotFallbackForInvalidAzureBlob(string uri) =>
+        Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddPiiInfrastructure(
+            Configuration(new() { ["Pii:Blob:ServiceUri"] = uri }), true));
+
+    [Fact]
+    public void AmbiguousBlobAuthenticationFailsBeforeRegistration() =>
+        Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddPiiInfrastructure(Configuration(new()
+        {
+            ["Pii:Blob:ServiceUri"] = "https://recorded.blob.core.windows.net/",
+            ["Pii:Blob:ConnectionString"] = "UseDevelopmentStorage=true"
+        }), true));
+
+    [Fact]
+    public void OnlyWorkerReadsConfiguredProviderKey()
+    {
+        var configuration = Configuration(new() { ["PII_TWELVEDATA_API_KEY"] = "synthetic-local-secret" });
+        Assert.Equal("synthetic-local-secret", InfrastructureRegistration.ReadResearchSourceOptions(configuration, true, false).TwelveDataApiKey);
+        Assert.Null(InfrastructureRegistration.ReadResearchSourceOptions(configuration, false, false).TwelveDataApiKey);
+    }
+
+    [Fact]
     public void DevelopmentDefaultsHaveOutsideCandidateButNoSeededHoldingsOrWebModel()
     {
         var services = new ServiceCollection().AddPiiInfrastructure(Configuration(), true);

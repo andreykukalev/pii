@@ -1,0 +1,30 @@
+{
+  "Pii": {
+    "LiveAuthorized": false,
+    "Model": {
+      "ProcessingAuthorized": false,
+      "Endpoint": "https://REPLACE.openai.azure.com/",
+      "Deployment": "REPLACE-AUTHORIZED-DEPLOYMENT",
+      "ModelVersion": "REPLACE-MODEL-VERSION",
+      "ApiVersion": "2024-10-21",
+      "Authentication": "DefaultAzureCredential",
+      "SupportsStrictSchemaAndTools": false,
+      "ProcessingRegion": "REPLACE-APPROVED-PROCESSING-GEOGRAPHY",
+      "RateCardVersion": "REPLACE-DATED-RATE-CARD",
+      "InputUsdPerMillion": null,
+      "OutputUsdPerMillion": null
+    },
+    "Sources": {
+      "Sec": { "RightsAuthorized": false, "ModelProcessingAllowed": false, "UserAgent": "REPLACE-APPLICATION-CONTACT", "CompanyFactsMaximumBytes": 1048576, "CompanyFactsLargerResponseAuthorized": false },
+      "Ecb": { "RightsAuthorized": false, "ModelProcessingAllowed": false },
+      "TwelveData": {
+        "RightsAuthorized": false, "ModelProcessingAllowed": false, "EvidenceRetentionAuthorized": false,
+        "Entitlements": [],
+        "RequestCreditAuthorization": { "Authorized": false, "RateCardVersion": "", "MaximumCreditsPerRequest": 0, "DailyMaximumCredits": 0, "EndpointWeights": {} }
+      },
+      "ExchangeTimeZones": {}
+    },
+    "CandidateCatalog": [],
+    "ExcludedInstrumentIds": []
+  }
+}

@@ -10,6 +10,7 @@ builder.AddWorkspaceCookieKeys();
 builder.Services.AddRazorPages(options => options.Conventions.AuthorizeFolder("/", WorkspaceSecurity.Policy));
 builder.Services.Configure<FormOptions>(options => options.MultipartBodyLengthLimit = 2 * 1024 * 1024);
 builder.Services.AddPiiInfrastructure(builder.Configuration, builder.Environment.IsDevelopment(), worker: false);
+builder.Services.AddWorkspaceTelemetry(builder.Configuration);
 builder.Services.AddTransient<ImportCoordinator>();
 builder.Services.AddTransient<RunCoordinator>();
 
@@ -22,6 +23,7 @@ if (!app.Environment.IsDevelopment())
 }
 app.Use(async (context, next) =>
 {
+    var started = System.Diagnostics.Stopwatch.GetTimestamp();
     context.Response.Headers.ContentSecurityPolicy = "default-src 'self'; script-src 'none'; style-src 'self' https://cdn.jsdelivr.net; img-src 'self' data:; font-src 'self' https://cdn.jsdelivr.net; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self' https://login.microsoftonline.com";
     context.Response.Headers.XContentTypeOptions = "nosniff";
     context.Response.Headers["Referrer-Policy"] = "no-referrer";
@@ -33,6 +35,11 @@ app.Use(async (context, next) =>
         context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
         context.Response.ContentType = "text/plain";
         await context.Response.WriteAsync("Workspace operation unavailable. Check local storage services and sanitized operational diagnostics.");
+    }
+    finally
+    {
+        context.RequestServices.GetRequiredService<WorkspaceTelemetry>().Record("Web",
+            context.Response.StatusCode < 500, System.Diagnostics.Stopwatch.GetElapsedTime(started));
     }
 });
 app.UseStaticFiles();

@@ -79,6 +79,9 @@ stages:
           - pwsh: |
               ./infra/validation/Test-IaC.ps1
               ./infra/validation/Test-ParameterGates.ps1
+              ./infra/validation/Test-ModularStages.ps1
+              ./infra/validation/Test-DeploymentWrappers.ps1
+              ./infra/validation/Test-LocalIntegrationTemplates.ps1
             displayName: Offline Infrastructure Contract Checks
           - bash: |
               set -euo pipefail

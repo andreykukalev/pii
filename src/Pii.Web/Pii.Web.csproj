@@ -1,4 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup><UserSecretsId>pii-web-development</UserSecretsId></PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Pii.Application/Pii.Application.csproj" />
     <ProjectReference Include="../Pii.Infrastructure/Pii.Infrastructure.csproj" />

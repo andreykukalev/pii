@@ -11,11 +11,18 @@ try
 {
     var command = WorkerCommand.Parse(args);
     var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { Args = [], ContentRootPath = AppContext.BaseDirectory });
+    if (builder.Environment.IsDevelopment())
+    {
+        builder.Configuration.AddUserSecrets(typeof(WorkerCommand).Assembly, optional: true);
+        builder.Configuration.AddEnvironmentVariables();
+    }
     builder.Services.AddPiiInfrastructure(builder.Configuration, builder.Environment.IsDevelopment(), worker: true);
+    builder.Services.AddWorkspaceTelemetry(builder.Configuration);
     builder.Services.AddTransient<ImportCoordinator>();
     builder.Services.AddTransient<RunCoordinator>();
     builder.Services.AddTransient<InvestmentPipeline>();
     using var host = builder.Build();
+    var started = System.Diagnostics.Stopwatch.GetTimestamp();
     using var cancellation = new CancellationTokenSource();
     var lifetime = host.Services.GetRequiredService<IHostApplicationLifetime>();
     using var stopping = lifetime.ApplicationStopping.Register(cancellation.Cancel);
@@ -82,6 +89,9 @@ try
         }
     }
     var exitCode = cancellation.IsCancellationRequested ? 130 : failed ? 1 : 0;
+    var telemetry = host.Services.GetRequiredService<WorkspaceTelemetry>();
+    telemetry.Record("Worker", exitCode == 0, System.Diagnostics.Stopwatch.GetElapsedTime(started));
+    await telemetry.FlushAsync(CancellationToken.None);
     await host.StopAsync();
     return exitCode;
 }

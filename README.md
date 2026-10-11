@@ -35,6 +35,10 @@ The fixture command refuses a nonempty workspace and cannot run in production. N
 
 ## Real Model And Sources
 
+For incremental Azure provisioning and local execution against Azure dependencies, start with [infra/README.md](infra/README.md) and [the local integration guide](infra/local/README.md). Independent Foundry, storage, SQL and optional monitoring stages do not create compute. Hosting infrastructure and actual image deployment are separate later stages. The existing Azure DevOps release path remains the legacy combined deployment contract; do not alternate owners on the same resources without the documented name/grant migration review.
+
+Both hosts support Development user secrets. The worker loads secrets before environment overrides; Azure/source keys remain worker-only. Optional Application Insights emits health events only, not private request paths, SQL statements or model/dependency payloads. Monitoring remains disabled unless explicitly configured.
+
 The actual SDK adapter executes sequential tool calls and strict structured results. `ModelOnFixtures` uses real configured inference on permitted synthetic evidence; `Live` requires a verified real portfolio, permitted source data and secure model configuration. Neither is enabled by default. Missing access is explicit Unavailable/ConfigurationError; live failures never switch to fixtures.
 
 Follow [deployment](docs/operations/deployment.md), [source boundaries](docs/architecture/data-sources.md) and [readiness](docs/operations/readiness.md). Model/source credentials belong only to the worker. Supply secrets outside chat and source control. Existing suitable Foundry deployments can be bound; creating resources requires authority and a verified after-tax forecast within USD100 total/month. No Azure resources have been provisioned by this implementation.

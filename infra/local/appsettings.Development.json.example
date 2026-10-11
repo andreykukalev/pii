@@ -1,0 +1,18 @@
+{
+  "Pii": {
+    "Mode": "FixtureReplay",
+    "AllowDevelopmentIdentity": true,
+    "Sql": { "ConnectionString": "Server=tcp:REPLACE.database.windows.net,1433;Database=pii_fixture_acceptance;Encrypt=True;TrustServerCertificate=False;Authentication=Active Directory Default;Connect Timeout=60" },
+    "Blob": { "ServiceUri": "https://REPLACE.blob.core.windows.net/", "Container": "documents" },
+    "Worker": { "MaximumBatch": 1 },
+    "ScheduleVersion": 1,
+    "Telemetry": { "Enabled": false },
+    "Limits": {
+      "MaximumDecisions": 12, "MaximumResearchTasks": 5, "MaximumCriticPasses": 2,
+      "MaximumTools": 32, "MaximumModelSubmissions": 24, "MaximumRunMinutes": 10,
+      "MaximumOutputTokens": 2500, "MaximumInputCharacters": 40000,
+      "MaximumRunTokens": 350000, "MaximumCallTokens": 12000,
+      "PerRunUsd": 1, "MonthlyAiUsd": 20, "MaximumCallUsd": 0.15
+    }
+  }
+}

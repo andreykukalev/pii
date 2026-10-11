@@ -28,17 +28,23 @@ public static class InfrastructureRegistration
                 throw new InvalidOperationException("Production requires encrypted Azure SQL with verified server certificate.");
         }
         var containerName = configuration["Pii:Blob:Container"] ?? "pii-documents";
-        var blobUri = development ? null : RequireAzureRoot(configuration["Pii:Blob:ServiceUri"], ".blob.core.windows.net");
+        var storageConnection = configuration["Pii:Blob:ConnectionString"];
+        var serviceUri = configuration["Pii:Blob:ServiceUri"];
+        if (!string.IsNullOrWhiteSpace(storageConnection) && !string.IsNullOrWhiteSpace(serviceUri))
+            throw new InvalidOperationException("Choose Blob ServiceUri or ConnectionString, not both.");
+        var blobUri = !development || !string.IsNullOrWhiteSpace(serviceUri)
+            ? RequireAzureRoot(serviceUri, ".blob.core.windows.net") : null;
         services.AddDbContextFactory<WorkspaceDbContext>(options => options.UseSqlServer(connection, sql => sql.CommandTimeout(20)));
         services.AddSingleton<IWorkspaceStore, SqlWorkspaceStore>();
         if (worker) services.AddSingleton<ISourceCreditStore, SqlSourceCreditStore>();
         services.AddSingleton<IWorkDispatch, DatabasePollingDispatch>();
         services.AddSingleton<IArtifactStore>(_ =>
         {
-            if (development)
+            if (development && blobUri is null)
             {
-                var storage = configuration["Pii:Blob:ConnectionString"] ?? "UseDevelopmentStorage=true";
-                return new BlobArtifactStore(new BlobServiceClient(storage).GetBlobContainerClient(containerName), true);
+                var storage = storageConnection ?? "UseDevelopmentStorage=true";
+                return new BlobArtifactStore(new BlobServiceClient(storage).GetBlobContainerClient(containerName),
+                    storage == "UseDevelopmentStorage=true");
             }
             return new BlobArtifactStore(new BlobServiceClient(blobUri!, new DefaultAzureCredential()).GetBlobContainerClient(containerName));
         });
@@ -55,7 +61,7 @@ public static class InfrastructureRegistration
                 services.AddSingleton<IModelGateway, FixtureModelGateway>();
             }
             else services.AddSingleton<IModelGateway>(_ => new AzureModelGateway(ReadModelOptions(configuration, runtime.Limits, runtime.Mode,
-                Environment.GetEnvironmentVariable("PII_AZURE_OPENAI_API_KEY")), development));
+                configuration["PII_AZURE_OPENAI_API_KEY"]), development));
         }
         return services;
     }
@@ -73,7 +79,7 @@ public static class InfrastructureRegistration
         TwelveDataRights = worker && configuration.GetValue<bool>("Pii:Sources:TwelveData:RightsAuthorized"),
         TwelveDataEvidenceRetentionAuthorized = worker && configuration.GetValue<bool>("Pii:Sources:TwelveData:EvidenceRetentionAuthorized"),
         TwelveDataModelProcessingAllowed = worker && configuration.GetValue<bool>("Pii:Sources:TwelveData:ModelProcessingAllowed"),
-        TwelveDataApiKey = worker ? Environment.GetEnvironmentVariable("PII_TWELVEDATA_API_KEY") : null,
+        TwelveDataApiKey = worker ? configuration["PII_TWELVEDATA_API_KEY"] : null,
         TwelveDataEntitlements = worker ? (configuration.GetSection("Pii:Sources:TwelveData:Entitlements").Get<string[]>() ?? []).ToHashSet(StringComparer.Ordinal) : [],
         TwelveDataRequestCredits = worker ? configuration.GetSection("Pii:Sources:TwelveData:RequestCreditAuthorization").Get<RequestCreditAuthorization>() ?? new() : new(),
         ExchangeTimeZones = configuration.GetSection("Pii:Sources:ExchangeTimeZones").Get<Dictionary<string, string>>() ?? []

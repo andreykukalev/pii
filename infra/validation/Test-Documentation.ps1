@@ -2,7 +2,7 @@
 param()
 $ErrorActionPreference = 'Stop'
 $root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
-$documents = @(Get-ChildItem (Join-Path $root 'docs') -Recurse -Filter '*.md')
+$documents = @(Get-ChildItem (Join-Path $root 'docs') -Recurse -Filter '*.md') + @(Get-ChildItem (Join-Path $root 'infra') -Recurse -Filter '*.md')
 if ($documents.Count -eq 0) { throw 'Documentation files required.' }
 $checked = 0
 foreach ($document in $documents) {
@@ -15,7 +15,7 @@ foreach ($document in $documents) {
         $checked++
     }
 }
-foreach ($script in Get-ChildItem (Join-Path $root 'infra/validation') -Filter '*.ps1') {
+foreach ($script in Get-ChildItem (Join-Path $root 'infra') -Filter '*.ps1' -Recurse) {
     $tokens = $null
     $errors = $null
     [Management.Automation.Language.Parser]::ParseFile($script.FullName, [ref]$tokens, [ref]$errors) | Out-Null
