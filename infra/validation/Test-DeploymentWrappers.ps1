@@ -11,6 +11,7 @@ $script:resourceResponses = @{}
 $script:inventory = @()
 $script:groupLocation = 'northeurope'
 $script:changes = @()
+$script:whatIfNote = $false
 $script:cache = @{}
 $script:checks = 0
 function Invoke-PiiAz {
@@ -34,7 +35,11 @@ function Invoke-PiiAz {
         if ($script:resourceResponses.ContainsKey($resourceId)) { return ($script:resourceResponses[$resourceId] | ConvertTo-Json -Depth 30) }
         return ($script:resourceResponse | ConvertTo-Json -Depth 30)
     }
-    if ($Arguments[2] -eq 'what-if') { return (@{ changes = $script:changes } | ConvertTo-Json -Depth 20) }
+    if ($Arguments[2] -eq 'what-if') {
+        $json = @{ changes = $script:changes } | ConvertTo-Json -Depth 20
+        if ($script:whatIfNote) { return "Note: Preview output is formatted as JSON.`r`n$json" }
+        return $json
+    }
     return '{}'
 }
 function Assert-Wrapper([bool]$Condition, [string]$Description) {
@@ -223,7 +228,12 @@ try {
     Assert-Rejected { Invoke-PiiStage -Stage foundry -SubscriptionId $subscription -ManifestPath $manifestPath -Action Validate } 'repeat create cannot convert OpenAI to AIServices'
     $script:inventory = @()
     $script:changes = @()
+    $script:whatIfNote = $true
+    $parsedChanges = @(ConvertFrom-PiiWhatIfOutput -Output "Note: Azure CLI informational message.`r`n{`r`n  `"changes`": []`r`n}")
+    Assert-Wrapper ($parsedChanges.Count -eq 0) 'WhatIf JSON accepts Azure CLI Note lines'
+    Assert-Rejected { ConvertFrom-PiiWhatIfOutput -Output "Unexpected diagnostic`r`n{`"changes`":[]}" } 'WhatIf JSON rejects unrecognized surrounding text'
     $null = Invoke-PiiStage -Stage foundation -SubscriptionId $subscription -ManifestPath $manifestPath -Action WhatIf -WhatIfReceiptPath $receiptPath
+    $script:whatIfNote = $false
     $script:changes = @(@{ changeType = 'Delete'; resourceId = '/mock/resource' })
     Assert-Rejected { Invoke-PiiStage -Stage foundation -SubscriptionId $subscription -ManifestPath $manifestPath -Action Apply -AuthorizeApply -AcknowledgeCost -WhatIfReceiptPath $receiptPath } 'destructive WhatIf rejected'
     Assert-Wrapper (@($script:calls | Where-Object { $_[0] -eq 'deployment' -and $_[2] -eq 'create' }).Count -eq 0) 'no apply after rejected preview'

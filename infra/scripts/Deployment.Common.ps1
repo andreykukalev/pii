@@ -60,6 +60,20 @@ function Convert-PiiCanonicalValue {
     return $Value
 }
 
+function ConvertFrom-PiiWhatIfOutput {
+    param([Parameter(Mandatory)][string]$Output)
+    $jsonLines = @($Output -split "`r?`n" | Where-Object {
+        $_.Trim() -and $_ -notmatch '^\s*Note:\s'
+    })
+    if ($jsonLines.Count -eq 0) { throw 'Azure CLI WhatIf response did not contain JSON.' }
+    try { $response = ($jsonLines -join [Environment]::NewLine) | ConvertFrom-Json }
+    catch { throw 'Azure CLI WhatIf response contained unexpected text or invalid JSON.' }
+    if ($null -eq $response.PSObject.Properties['changes']) {
+        throw 'Azure CLI WhatIf JSON did not contain a changes list.'
+    }
+    return $response.changes
+}
+
 function Test-PiiParameters {
     param([hashtable]$Parameters, $Template, $Manifest, [string]$Stage)
     foreach ($key in $Parameters.Keys) {
@@ -368,7 +382,7 @@ function Invoke-PiiStage {
             $operation = @{ WhatIf = 'what-if'; Validate = 'validate'; Apply = 'create' }[$Action]
             if ($Action -in @('WhatIf','Apply')) {
                 $preview = Invoke-PiiAz -Arguments ($base + @('what-if') + $common + @('--result-format','FullResourcePayloads','--output','json'))
-                $changes = @((($preview | ConvertFrom-Json).changes) | Sort-Object resourceId)
+                $changes = @(ConvertFrom-PiiWhatIfOutput -Output $preview | Sort-Object resourceId)
                 $changeHash = Get-PiiHash (ConvertTo-Json -InputObject (Convert-PiiCanonicalValue $changes) -Depth 100 -Compress)
                 foreach ($change in $changes) {
                     if ($change.changeType -eq 'Delete') { throw 'Deletion is not authorized by these incremental wrappers.' }
