@@ -12,6 +12,8 @@ One General Purpose `GP_S_Gen5` serverless database, default min0.5/max1 vCore, 
 
 Entra-only supplied tenant/object/name administrator. Runtime web/worker are separate UAMIs with verified client-ID contained users and narrow seven-table SELECT/INSERT/UPDATE/DELETE grants. Schema creation/migration rights belong to separate reviewed bootstrap identity; no application db_owner. Initial complete schema must precede EnsureCreated runtime initialization. Public endpoint/firewall is explicit, no automatically purchased private network or always-broad Azure-services exemption.
 
+Deployment clarification: this ADR records the selected serverless production default and historical backend decision, not a second deployment approach. The [data stage](../../infra/stages/data.bicep) is the only SQL ARM owner, selected through the central manifest; it also permits an explicitly reviewed Basic DTU configuration or read-only existing binding. Bootstrap/additive schema and contained-user grants remain separate manual SQL operations, never automatic pipeline side effects.
+
 ## Alternatives And Tradeoffs
 
 Cosmos would require partition/batch/staged-publication and actual entitlement/RU/index/query evaluation; its free tier is not available for serverless or guaranteed to this subscription. SQL simplifies native confirmation plus work intent and history/claim constraints for this code. Blob-only would add manual indexed history/commit machinery; local SQLite/ephemeral files are not production sources of truth. No alternative backend is deployed as a convenience.

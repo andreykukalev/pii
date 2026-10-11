@@ -11,8 +11,9 @@ The main agent owns source/test changes. Implemented optional telemetry keys are
 Login is deliberate and manual; wrappers never do it:
 
 ```powershell
-$subscription = '<actual-subscription-guid>'
-$tenant = '<actual-tenant-guid>'
+$manifest = './infra/parameters/manifest.json'
+$subscription = (Get-Content $manifest -Raw | ConvertFrom-Json).subscriptionId
+$tenant = (Get-Content $manifest -Raw | ConvertFrom-Json).shared.auth.tenantId
 az login --tenant $tenant
 az account show --subscription $subscription --query '{id:id,tenantId:tenantId}' --output json
 az ad signed-in-user show --query id --output tsv
@@ -31,6 +32,7 @@ SQLCMD/VS Code MSSQL or another approved SQL client must connect with Entra inte
 Developer Blob RBAC is a separate optional resource action. `access.bicep` defaults principalType User, documents-only; choose Group explicitly when appropriate. Grant keys only when testing persisted production cookies; local Development does not normally need that container. Inference is a further explicit opt-in:
 
 ```powershell
+$subscription = (Get-Content $manifest -Raw | ConvertFrom-Json).subscriptionId
 az deployment group what-if --subscription $subscription --resource-group <storage-rg> --name pii-dev-developer-access --template-file infra/stages/access.bicep --parameters storageAccountName=<actual-name> principalId=<verified-user-object-guid> principalType=User grantKeyContainer=false grantInference=false --mode Incremental --result-format ResourceIdOnly
 # Only after separate role-assignment authority/review, replace what-if with create and omit result-format.
 ```
@@ -39,7 +41,7 @@ The access entrypoint scopes storage and optional Foundry in the same RG. For a 
 
 ## Shared Configuration
 
-[appsettings.Development.json.example](appsettings.Development.json.example) inventories **shared** keys; [worker.settings.json.example](worker.settings.json.example) inventories **worker-only** model/source keys. They are examples, not auto-loaded paths. Use approved user-secrets/nonsecret environment configuration for both hosts. Do not pipe whole worker configuration into web. User-secrets are Development convenience storage, not an encrypted vault; protect local profile/files and never publish them.
+[appsettings.Development.json](../parameters/local/appsettings.Development.json) inventories **shared** keys; [worker.settings.json](../parameters/local/worker.settings.json) inventories **worker-only** model/source keys. These tracked placeholders moved under `infra/parameters/local`; they are manually imported templates, not auto-loaded application paths. Use approved user-secrets/nonsecret environment configuration for both hosts. Do not pipe whole worker configuration into web. User-secrets are Development convenience storage, not an encrypted vault; protect local profile/files and never publish them. Resource identifiers come from the SAME existing manifest selected for [each deployment stage](../README.md#manifest-and-names); local templates do not become another provisioning source. Runtime key names and application behavior are unchanged.
 
 Development user-secrets are implemented: web ID **`pii-web-development`** uses the web host loader; worker ID **`pii-worker-development`** is explicitly loaded by the worker. Environment configuration overrides user-secrets in both hosts. The project-based commands below select those IDs automatically.
 
@@ -66,7 +68,7 @@ Active Directory Interactive is an optional deliberate SQL connection-string cho
 
 For explicit development SQL-password mode, opt in on the **data stage** using a protected secure file with only `sqlAdministratorPassword`, then configure a separate least-privilege SQL user connection with secure user-secrets. Use `Authentication=Sql Password;User ID=<reviewed-dev-user>;Password=<secret>` plus Encrypt/verified certificate; do not run hosts as SQL administrator. Keep Entra default and future hosted MI auth unchanged. For explicit shared-key Blob mode, opt in dev-only at storage; supply a protected `Pii:Blob:ConnectionString` **instead of** ServiceUri. Obtain/rotate keys yourself using an approved tool; scripts never extract them. Protect files and remove conflicting environment values. No keys in outputs or tracked templates.
 
-[web.secrets.json.example](web.secrets.json.example) and [worker.secrets.json.example](worker.secrets.json.example) show placeholders only; remove unused entries, do not load placeholder values. A private JSON dictionary can be imported into user-secrets without placing literal secrets on a command line:
+[web.secrets.json](../parameters/local/web.secrets.json) and [worker.secrets.json](../parameters/local/worker.secrets.json) show placeholders only; remove unused entries, do not load placeholder values. Real credentials remain outside the repository. A private JSON dictionary can be imported into user-secrets without placing literal secrets on a command line:
 
 ```powershell
 Get-Content "$HOME\pii-private\web.secrets.json" -Raw | dotnet user-secrets set --project src/Pii.Web

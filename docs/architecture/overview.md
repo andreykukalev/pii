@@ -28,4 +28,4 @@ Web, worker and deploy identities are separate. SQL has supplied Entra-only admi
 
 Public service endpoints plus authentication are not network-private endpoints. SQL network access requires a reviewed firewall path; opting into Azure-services `0.0.0.0` permits connections from other Azure tenants at the network layer, with Entra SQL authorization still required. Private networking is not silently introduced.
 
-Scope and verification: [requirements](../product/requirements.md), [acceptance](../product/roadmap-and-acceptance.md), [Bicep entry](../../infra/main.bicep). Source-owner issues and external verification remain distinct from locally compiled infrastructure.
+Scope and verification: [requirements](../product/requirements.md), [acceptance](../product/roadmap-and-acceptance.md), [staged infrastructure](../../infra/README.md). The central manifest and independent wrappers are the only deployment approach; pipeline deployment selects the same stages. Source-owner issues and external verification remain distinct from locally compiled infrastructure.

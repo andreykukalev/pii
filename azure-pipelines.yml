@@ -9,13 +9,16 @@ parameters:
   - name: deploy
     type: boolean
     default: false
-  - name: deployWorkloads
-    type: boolean
-    default: false
+  - name: deploymentStage
+    type: string
+    default: foundation
+    values: [foundation, foundry, storage, data, monitoring, compute, application]
+  - name: secureParametersSecureFile
+    type: string
+    default: ''
 
 variables:
   DotNetSdkVersion: '10.0.401'
-  DeploymentName: 'pii-release'
 
 stages:
   - stage: Build
@@ -74,14 +77,18 @@ stages:
               set -euo pipefail
               az bicep install --version v0.48.1
               mkdir -p "$(Build.ArtifactStagingDirectory)/release"
-              az bicep build --file infra/main.bicep --outfile "$(Build.ArtifactStagingDirectory)/release/main.json"
+              for template in infra/stages/*.bicep infra/modules/*.bicep; do
+                az bicep build --file "$template" --outfile "$(Build.ArtifactStagingDirectory)/release/$(basename "$template" .bicep).json"
+              done
             displayName: Local Bicep Compilation Without Azure Login
           - pwsh: |
-              ./infra/validation/Test-IaC.ps1
-              ./infra/validation/Test-ParameterGates.ps1
+              $ErrorActionPreference = 'Stop'
+              ./infra/validation/Test-ManifestResolution.ps1
               ./infra/validation/Test-ModularStages.ps1
               ./infra/validation/Test-DeploymentWrappers.ps1
               ./infra/validation/Test-LocalIntegrationTemplates.ps1
+              ./infra/validation/Test-StagedPipeline.ps1
+              ./infra/validation/Test-Documentation.ps1
             displayName: Offline Infrastructure Contract Checks
           - bash: |
               set -euo pipefail
@@ -101,14 +108,15 @@ stages:
                 docker image inspect --format '{{.Id}}' "pii/$host:$(Build.BuildId)" > "$out/$host-local-image-id.txt"
                 docker save "pii/$host:$(Build.BuildId)" -o "$out/$host.tar"
               done
-              cp -R infra "$out/infra"
+              mkdir -p "$out/infra"
+              cp -R infra/stages infra/modules infra/scripts infra/sql "$out/infra/"
               cp Dockerfile.web Dockerfile.worker .dockerignore "$out/"
             displayName: Resolve Base Digests Build Nonroot Linux Images And Record Evidence
           - publish: $(Build.ArtifactStagingDirectory)/release
             artifact: release
 
   - stage: WhatIf
-    displayName: Authorized Registry Push And Resource Change Preview
+    displayName: Authorized Selected Stage Preview
     dependsOn: Build
     condition: and(succeeded(), ${{ eq(parameters.deploy, true) }}, eq(variables['PiiDeploymentAuthority'], 'true'), eq(variables['PiiAfterTaxForecastApproved'], 'true'), ne(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
     jobs:
@@ -120,52 +128,53 @@ stages:
           - download: current
             artifact: release
           - task: DownloadSecureFile@1
-            name: parametersFile
+            name: manifestFile
             inputs:
-              secureFile: $(DeploymentParametersSecureFile)
+              secureFile: $(DeploymentManifestSecureFile)
+          - ${{ if ne(parameters.secureParametersSecureFile, '') }}:
+              - task: DownloadSecureFile@1
+                name: secureParametersFile
+                inputs:
+                  secureFile: ${{ parameters.secureParametersSecureFile }}
           - task: AzureCLI@2
             inputs:
               azureSubscription: $(AzureServiceConnection)
-              scriptType: bash
+              scriptType: pscore
               scriptLocation: inlineScript
               addSpnToEnvironment: false
               inlineScript: |
-                set -euo pipefail
-                az account show --query id --output tsv > /dev/null
-                out="$(Pipeline.Workspace)/release"
-                scratch="$(Agent.TempDirectory)/pii-parameters.json"
-                trap 'rm -f "$scratch"' EXIT
-                workloads=$(echo '${{ parameters.deployWorkloads }}' | tr '[:upper:]' '[:lower:]')
-                jq --argjson workloads "$workloads" '.parameters.deployWorkloads.value=$workloads' "$(parametersFile.secureFilePath)" > "$scratch"
-                if [[ "$workloads" == true ]]; then
-                  registry='$(RegistryName)'
-                  host=$(az acr show --name "$registry" --resource-group '$(ResourceGroup)' --query loginServer --output tsv)
-                  az acr login --name "$registry" --output none
-                  for app in web worker; do
-                    docker load -i "$out/$app.tar"
-                    image="$host/pii/$app:$(Build.BuildId)"
-                    docker tag "pii/$app:$(Build.BuildId)" "$image"
-                    docker push "$image"
-                    digest=$(az acr repository show --name "$registry" --image "pii/$app:$(Build.BuildId)" --query digest --output tsv)
-                    [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
-                    printf '%s=%s/pii/%s@%s\n' "$app" "$host" "$app" "$digest" >> "$out/image-digests.txt"
-                    jq --arg name "${app}Image" --arg image "$host/pii/$app@$digest" '.parameters[$name].value=$image' "$scratch" > "$scratch.next"
-                    mv "$scratch.next" "$scratch"
-                  done
-                fi
-                pwsh -NoProfile -File "$out/infra/validation/Test-DeploymentParameters.ps1" -Path "$scratch"
-                az deployment group what-if --resource-group '$(ResourceGroup)' --name '$(DeploymentName)' --template-file "$out/main.json" --parameters "@$scratch" --result-format ResourceIdOnly --no-pretty-print --output json > "$out/what-if.json"
-                mkdir -p "$out/change-review"
-                cp "$out/what-if.json" "$out/change-review/"
-                if [[ -f "$out/image-digests.txt" ]]; then cp "$out/image-digests.txt" "$out/change-review/"; fi
+                $ErrorActionPreference = 'Stop'
+                az bicep install --version v0.48.1
+                if ($LASTEXITCODE -ne 0) { throw 'Bicep installation failed.' }
+                $configDirectory = '$(Pipeline.Workspace)/pii-config'
+                $manifestPath = Join-Path $configDirectory 'manifest.json'
+                $receiptPath = '$(Pipeline.Workspace)/change-review/${{ parameters.deploymentStage }}.json'
+                $null = New-Item -ItemType Directory -Path $configDirectory -Force
+                try {
+                  Copy-Item -LiteralPath '$(manifestFile.secureFilePath)' -Destination $manifestPath
+                  . '$(Pipeline.Workspace)/release/infra/scripts/Deployment.Common.ps1'
+                  $configuration = Read-PiiManifest $manifestPath
+                  $context = (Invoke-PiiAz -Arguments @('account','show','--subscription',$configuration.subscriptionId,'--output','json','--only-show-errors')) | ConvertFrom-Json
+                  if ($context.id -ine $configuration.subscriptionId -or $context.tenantId -ine $configuration.shared.auth.tenantId) { throw 'WIF connection scope does not match the selected manifest subscription/tenant.' }
+                  $arguments = @{ ManifestPath = $manifestPath; Action = 'WhatIf'; WhatIfReceiptPath = $receiptPath }
+                  if ($env:PII_SECURE_PARAMETERS_PATH) { $arguments.SecureParametersPath = $env:PII_SECURE_PARAMETERS_PATH }
+                  & '$(Pipeline.Workspace)/release/infra/scripts/deploy-${{ parameters.deploymentStage }}.ps1' @arguments
+                } finally {
+                  if (Test-Path -LiteralPath $configDirectory) { Remove-Item -LiteralPath $configDirectory -Recurse -Force }
+                }
+            env:
+              ${{ if ne(parameters.secureParametersSecureFile, '') }}:
+                PII_SECURE_PARAMETERS_PATH: $(secureParametersFile.secureFilePath)
+              ${{ else }}:
+                PII_SECURE_PARAMETERS_PATH: ''
             displayName: WIF Preview No Credentials Or Parameter Values Printed
-          - publish: $(Pipeline.Workspace)/release/change-review
+          - publish: $(Pipeline.Workspace)/change-review
             artifact: change-review
 
   - stage: Apply
     displayName: Environment Approved Apply
     dependsOn: WhatIf
-    condition: and(succeeded(), ${{ eq(parameters.deploy, true) }}, eq(variables['PiiDeploymentAuthority'], 'true'), eq(variables['PiiAfterTaxForecastApproved'], 'true'))
+    condition: and(succeeded(), ${{ eq(parameters.deploy, true) }}, eq(variables['PiiDeploymentAuthority'], 'true'), eq(variables['PiiAfterTaxForecastApproved'], 'true'), ne(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
     jobs:
       - deployment: ApplyApprovedChanges
         pool:
@@ -181,35 +190,43 @@ stages:
                 - download: current
                   artifact: change-review
                 - task: DownloadSecureFile@1
-                  name: parametersFile
+                  name: manifestFile
                   inputs:
-                    secureFile: $(DeploymentParametersSecureFile)
+                    secureFile: $(DeploymentManifestSecureFile)
+                - ${{ if ne(parameters.secureParametersSecureFile, '') }}:
+                    - task: DownloadSecureFile@1
+                      name: secureParametersFile
+                      inputs:
+                        secureFile: ${{ parameters.secureParametersSecureFile }}
                 - task: AzureCLI@2
                   inputs:
                     azureSubscription: $(AzureServiceConnection)
-                    scriptType: bash
+                    scriptType: pscore
                     scriptLocation: inlineScript
                     addSpnToEnvironment: false
                     inlineScript: |
-                      set -euo pipefail
-                      out="$(Pipeline.Workspace)/release"
-                      review="$(Pipeline.Workspace)/change-review"
-                      scratch="$(Agent.TempDirectory)/pii-parameters.json"
-                      trap 'rm -f "$scratch" "$scratch.next"' EXIT
-                      workloads=$(echo '${{ parameters.deployWorkloads }}' | tr '[:upper:]' '[:lower:]')
-                      jq --argjson workloads "$workloads" '.parameters.deployWorkloads.value=$workloads' "$(parametersFile.secureFilePath)" > "$scratch"
-                      if [[ "$workloads" == true ]]; then
-                        test -s "$review/image-digests.txt"
-                        while IFS='=' read -r app image; do
-                          [[ "$app" == web || "$app" == worker ]]
-                          jq --arg name "${app}Image" --arg image "$image" '.parameters[$name].value=$image' "$scratch" > "$scratch.next"
-                          mv "$scratch.next" "$scratch"
-                        done < "$review/image-digests.txt"
-                      fi
-                      pwsh -NoProfile -File "$out/infra/validation/Test-DeploymentParameters.ps1" -Path "$scratch"
-                      az deployment group what-if --resource-group '$(ResourceGroup)' --name '$(DeploymentName)' --template-file "$out/main.json" --parameters "@$scratch" --result-format ResourceIdOnly --no-pretty-print --output json > "$(Agent.TempDirectory)/pii-final-what-if.json"
-                      jq -S '.changes | map({resourceId,changeType}) | sort_by(.resourceId)' "$review/what-if.json" > "$(Agent.TempDirectory)/pii-approved-changes.json"
-                      jq -S '.changes | map({resourceId,changeType}) | sort_by(.resourceId)' "$(Agent.TempDirectory)/pii-final-what-if.json" > "$(Agent.TempDirectory)/pii-final-changes.json"
-                      cmp "$(Agent.TempDirectory)/pii-approved-changes.json" "$(Agent.TempDirectory)/pii-final-changes.json"
-                      az deployment group create --resource-group '$(ResourceGroup)' --name '$(DeploymentName)' --template-file "$out/main.json" --parameters "@$scratch" --output none --only-show-errors
+                      $ErrorActionPreference = 'Stop'
+                      az bicep install --version v0.48.1
+                      if ($LASTEXITCODE -ne 0) { throw 'Bicep installation failed.' }
+                      $configDirectory = '$(Pipeline.Workspace)/pii-config'
+                      $manifestPath = Join-Path $configDirectory 'manifest.json'
+                      $receiptPath = '$(Pipeline.Workspace)/change-review/${{ parameters.deploymentStage }}.json'
+                      $null = New-Item -ItemType Directory -Path $configDirectory -Force
+                      try {
+                        Copy-Item -LiteralPath '$(manifestFile.secureFilePath)' -Destination $manifestPath
+                        . '$(Pipeline.Workspace)/release/infra/scripts/Deployment.Common.ps1'
+                        $configuration = Read-PiiManifest $manifestPath
+                        $context = (Invoke-PiiAz -Arguments @('account','show','--subscription',$configuration.subscriptionId,'--output','json','--only-show-errors')) | ConvertFrom-Json
+                        if ($context.id -ine $configuration.subscriptionId -or $context.tenantId -ine $configuration.shared.auth.tenantId) { throw 'WIF connection scope does not match the selected manifest subscription/tenant.' }
+                        $arguments = @{ ManifestPath = $manifestPath; Action = 'Apply'; WhatIfReceiptPath = $receiptPath; AuthorizeApply = $true; AcknowledgeCost = $true }
+                        if ($env:PII_SECURE_PARAMETERS_PATH) { $arguments.SecureParametersPath = $env:PII_SECURE_PARAMETERS_PATH }
+                        & '$(Pipeline.Workspace)/release/infra/scripts/deploy-${{ parameters.deploymentStage }}.ps1' @arguments
+                      } finally {
+                        if (Test-Path -LiteralPath $configDirectory) { Remove-Item -LiteralPath $configDirectory -Recurse -Force }
+                      }
+                  env:
+                    ${{ if ne(parameters.secureParametersSecureFile, '') }}:
+                      PII_SECURE_PARAMETERS_PATH: $(secureParametersFile.secureFilePath)
+                    ${{ else }}:
+                      PII_SECURE_PARAMETERS_PATH: ''
                   displayName: Recheck Approved Change Set And Apply Without Secret Output

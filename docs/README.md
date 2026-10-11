@@ -7,14 +7,17 @@ Start with [requirements](product/requirements.md), [architecture](architecture/
 Local infrastructure checks, without Azure login or model calls:
 
 ```powershell
-./infra/validation/Test-IaC.ps1
-./infra/validation/Test-ParameterGates.ps1
+./infra/validation/Test-ManifestResolution.ps1
+./infra/validation/Test-ModularStages.ps1
+./infra/validation/Test-DeploymentWrappers.ps1
+./infra/validation/Test-LocalIntegrationTemplates.ps1
+./infra/validation/Test-StagedPipeline.ps1
 ./infra/validation/Test-TrackedSecrets.ps1
 ./infra/validation/Test-Documentation.ps1
 ./infra/validation/Test-SchemaBootstrap.ps1
 ```
 
-Infrastructure entry point: [main Bicep](../infra/main.bicep). [Parameter example](../infra/parameters.example.json) is deliberately invalid until real authorized identity/location inputs replace placeholders; all activation flags default off. Compiling a template is not deployment authority or production readiness.
+Infrastructure has one approach: [central manifest](../infra/parameters/manifest.json), [independent stage guide](../infra/README.md), and [pipeline](../azure-pipelines.yml) using those same wrappers. The selected private manifest is never rewritten or merged with a flat configuration. Compute/application require explicit selection; all activation flags default off. Compiling a template is not deployment authority or production readiness.
 
 ## Design
 
@@ -33,4 +36,4 @@ The schema check creates/removes a uniquely named disposable **local** SQL datab
 
 ## File Inventory
 
-This ownership slice contains four root deployment files (two Dockerfiles, Docker ignore and Azure DevOps YAML), thirteen infrastructure files (main, three modules, one placeholder parameter example, two SQL bootstrap files and six validation scripts), and the twenty documents linked here. Source/tests/root README/SDK/build props/gitignore/solution remain owned by the main implementation; no manual edits to those paths were made by this task.
+Root deployment artifacts are the two Dockerfiles, Docker ignore and Azure DevOps YAML. Infrastructure consists of eight independent stages, three shared runtime-access modules, one central manifest with static projections/local templates, shared PowerShell wrappers, SQL bootstrap/additive grants and current validators. [The ownership inventory](../infra/README.md#inventory-and-ownership) lists the resource boundaries. Combined templates and flat deployment parameters are no longer present; existing deployed data/resources are not removed by that source cleanup.

@@ -1,6 +1,6 @@
 # Incremental Infrastructure
 
-This is the independent-stage workflow. [main.bicep](main.bicep) and [parameters.example.json](parameters.example.json) remain the **legacy combined deployment contract** for the unchanged pipeline; they are not invoked by these wrappers. Do not alternate legacy and staged owners on the same resources without reviewing names, role IDs and settings. This change performs no Azure login, resource operation, provider registration, inference, image build or push.
+This is the only infrastructure deployment workflow: independent stages using one selected central manifest and the same PowerShell wrappers locally and in [Azure DevOps](../azure-pipelines.yml). Combined templates, flat parameters and their validators have been removed. Removing source files does not delete deployed resources. This change performs no Azure login, resource operation, provider registration, inference, image build or push.
 
 ## Inventory And Ownership
 
@@ -19,11 +19,32 @@ No Hub, hosted agents, AI Search/vector store, Cosmos, Redis, Queue, Key Vault, 
 
 ## Manifest And Names
 
-Keep the actual manifest and all protected parameter/configuration files **outside the repository**, for example under `$HOME\pii-private`. Edit an operator-owned instance based on [manifest.example.json](parameters/manifest.example.json). The example has placeholders, not actual identity/region/entitlement/forecast evidence. Fields: `schemaVersion=1`, explicit subscription/RG/location/environment/prefix/tags and `stages.<stage>.enabled/parameters`. An optional stage `resourceGroupName` supports an existing Foundry/storage/data RG in the **same subscription and selected region**. Compute's `storageResourceGroup`, `registryResourceGroup`, `foundryResourceGroup`, `workspaceResourceGroup` allow scoped same-subscription dependencies. Cross-subscription/sovereign-cloud runtime bindings are not implemented.
+All thirteen configuration templates are under `infra/parameters`: `manifest.json`, `secure.json`, `foundation.bicepparam`, `foundry.bicepparam`, `storage.bicepparam`, `data.bicepparam`, `monitoring.bicepparam`, `compute.bicepparam`, `application.bicepparam`, `local/appsettings.Development.json`, `local/worker.settings.json`, `local/web.secrets.json`, and `local/worker.secrets.json`. Old `.example` filenames are removed, not compatibility aliases. The local guide remains under `infra/local`; update manual import paths, not runtime configuration loading. Existing externally selected manifests require no filename change. Private `*.secure.json` and `*.local.json` files remain ignored; tracked placeholders must never receive real credentials.
+
+Keep your existing actual manifest selected by `$manifest`; do not copy, move or replace it or create a competing environment file. Keep credentials and protected secure-only configuration **outside the repository**, for example under `$HOME\pii-private`. [manifest.json](parameters/manifest.json) retains the schema-2 safe placeholders until the operator fills them in the selected file. Wrappers never rewrite it or your selected file. Replace placeholder subscription/identity/region values before validation/Apply as required by their contracts; compilation is not entitlement or forecast evidence.
+
+Every independent wrapper and `deploy-all` requires an explicit `-ManifestPath` selecting the SAME existing JSON file. That file exclusively owns all nonsecret deployment configuration: root `subscriptionId` must be a nonempty GUID, `shared.auth.tenantId` owns the tenant, and root/shared/stage fields own names, region, scopes and options. The tracked subscription placeholder must be filled by the operator. There is no subscription CLI parameter, environment selector, guessed path, active-subscription fallback, automatic copy or account switch. External environment subscription/tenant/path values never override the selected JSON. Existing ARM IDs must match its subscription. Existing Bicep defaults and the shared resolver/schema remain unchanged for omitted optional fields.
+
+Root fields are `subscriptionId`, `resourceGroupName`, `location`, `environmentName`, `prefix`, `tags`, and `stages.<stage>.enabled/parameters`. One `shared` section owns the following fixed bindings; optional fields may be omitted to retain existing Bicep defaults:
+
+| Shared group | Fields and existing bindings |
+| --- | --- |
+| `auth` | `tenantId` -> data/application; `allowedObjectId` -> application; `webAppClientId` -> application `webClientId` |
+| `storage` | `accountName` -> storage/compute and application Blob root; `documentsName` -> all three; `keysName` -> storage/compute and application keyring path; `resourceGroupName` -> owner/compute scope |
+| `data` | `serverName` -> data and application SQL FQDN; `databaseName` -> data/application; `resourceGroupName` -> SQL owner scope |
+| `foundry` | `accountName` -> foundry/compute; `projectName` -> foundry; `deploymentName`, `modelVersion` -> foundry/application; `resourceGroupName` -> owner/compute inference scope |
+| `compute` | `managedEnvironmentName`, `registryName`, `registryResourceGroup`, `webIdentityName`, `workerIdentityName` -> compute/application; `webName`, `workerName` -> application; `resourceGroupName` -> compute scope |
+| `monitoring` | `workspaceName`, `workspaceResourceGroup` -> monitoring/compute; `insightsName` -> monitoring; `resourceGroupName` -> monitoring deployment scope |
+
+The web application registration client ID is **not** either runtime UAMI client ID. UAMI principal/client IDs remain Azure outputs, not invented configuration values. Shared fields contain identifiers only, never credentials. SKU, firewall, capacity, activation, rights, rates and other stage-specific options remain under stage parameters. [secure.json](parameters/secure.json) is a placeholder for declared secure-only values; real protected parameter files remain external and may only supply secure parameters declared by the selected stage.
+
+Schema 1 stage-only manifests remain accepted with a valid root `subscriptionId`. The resolver infers shared values from explicitly supplied owner/consumer parameters, normalizes only in memory, accepts equal duplicates, and rejects conflicting explicit paths before cloud calls, including disabled-stage duplicates. To migrate manually, move equal identifier fields into `shared`, remove their duplicates and set `schemaVersion=2` in the SAME selected file. Preserve all actual names/scopes and stage options. Missing generated Bicep names are not synthesized: dependent stages require explicit bindings where their contracts/preflight need them. No resources/stages are enabled automatically.
+
+Same-subscription cross-RG storage/Foundry/SQL and explicit registry/workspace scopes remain supported. Owner `resourceGroupName` or supported `existingResourceId` supplies the shared scope; explicit conflicting scopes fail. Environment/identities must stay in the application RG because existing Bicep has no cross-RG binding for them. Application Blob/SQL endpoints derive from selected public Azure names; an explicit matching root (with or without slash) and custom XML keyring filename are preserved, while mismatched account/container/hostname overrides fail. Cross-subscription/sovereign-cloud runtime bindings are not implemented.
 
 Use explicit existing resource names and scope fields, derived from verified full ARM IDs. Foundry/storage/data sections optionally accept `existingResourceId` for the account or SQL **server** ARM ID; it must match explicit `mode=existing`, account/server name and subscription, and supplies the stage RG. A conflicting explicit stage RG fails. Database/project IDs are not accepted as account/server IDs. No discovery picks a subscription/name for you. Stable fallback names use `uniqueString(resourceGroup().id,prefix,environmentName)`; no time/random component. Pin generated names into the manifest before moving ownership. The example pins replaceable names so all later stages bind the same resources.
 
-**Legacy migration:** old suffix is `uniqueString(resourceGroup().id,prefix)` (different from the new fallback). Inventory and retain its exact `st<suffix>`, `<prefix>-sql-<suffix>`, database, `acr<suffix>`, `<prefix>-logs`, `<prefix>-environment`, `<prefix>-web-mi`, `<prefix>-worker-mi`, `<prefix>-web`, `<prefix>-worker`. Set the corresponding stage name parameters explicitly. Existing OpenAI accounts must use Foundry `mode=existing, existingAccountKind=OpenAI, createProject=false, bindProject=false`. **Never convert OpenAI to AIServices.** New AIServices belongs to a separately authorized name if needed, not an accidental duplicate. Role assignment IDs differ in some legacy container grants: inventory them and review duplicate-effective access/ownership before enabling compute grants. These scripts never delete/reconcile old grants or omitted resources.
+**Previously deployed resource migration:** the retired deployment used suffix `uniqueString(resourceGroup().id,prefix)` (different from the staged fallback). Inventory and retain its exact `st<suffix>`, `<prefix>-sql-<suffix>`, database, `acr<suffix>`, `<prefix>-logs`, `<prefix>-environment`, `<prefix>-web-mi`, `<prefix>-worker-mi`, `<prefix>-web`, `<prefix>-worker`. Pin the corresponding identifiers in the SAME manifest. Existing OpenAI accounts must use Foundry `mode=existing, existingAccountKind=OpenAI, createProject=false, bindProject=false`. **Never convert OpenAI to AIServices.** New AIServices belongs to a separately authorized name if needed, not an accidental duplicate. Previously deployed role IDs may differ: inventory them and review duplicate-effective access/ownership before enabling compute grants. These scripts never delete/reconcile old grants or omitted resources; the retired deployment is not an available alternative.
 
 **Registry role GUID migration:** runtime pull assignments now use `guid(registry.id, principalId, role)`, not the UAMI resource ID. Recreating a UAMI at the same resource ID gives it a new principal and therefore a new assignment name, avoiding an attempt to mutate the old assignment's principal. Existing identity-ID-based grants have different GUIDs. Review current assignments, duplicate-effective access and stale principals before applying this change; any cleanup requires separate explicit review/authority. No automatic deletion or migration of old grants is performed.
 
@@ -31,67 +52,57 @@ Use explicit existing resource names and scope fields, derived from verified ful
 
 ## Commands
 
-Run from repository root in **Windows PowerShell 5.1** with Azure CLI and its local Bicep compiler already available. No wrapper logs in, changes active subscription, registers providers or obtains secrets. Provider availability/registration is a separately reviewed operator action, not an automatic helper. Every cloud CLI command includes `--subscription`.
+Run from repository root in **Windows PowerShell 5.1 or PowerShell Core on Linux** with Azure CLI and its local Bicep compiler already available. No wrapper logs in, changes active subscription, registers providers or obtains secrets. Provider availability/registration is a separately reviewed operator action, not an automatic helper. Every cloud CLI command includes `--subscription`.
 
 ```powershell
-$subscription = '<actual-subscription-guid>'
-$manifest = "$HOME\pii-private\manifest.json"
+$manifest = './infra/parameters/manifest.json'
 $secureApplication = "$HOME\pii-private\application.secure.json"
 
 # LOCAL ONLY: compile + manifest type/enum/range/combination checks, no authentication.
-./infra/scripts/deploy-foundation.ps1 -SubscriptionId $subscription -ManifestPath $manifest -Action Validate -Offline
-./infra/scripts/deploy-foundry.ps1 -SubscriptionId $subscription -ManifestPath $manifest -Action Validate -Offline
-./infra/scripts/deploy-storage.ps1 -SubscriptionId $subscription -ManifestPath $manifest -Action Validate -Offline
-./infra/scripts/deploy-data.ps1 -SubscriptionId $subscription -ManifestPath $manifest -Action Validate -Offline
-./infra/scripts/deploy-monitoring.ps1 -SubscriptionId $subscription -ManifestPath $manifest -Action Validate -Offline
-./infra/scripts/deploy-compute.ps1 -SubscriptionId $subscription -ManifestPath $manifest -Action Validate -Offline
-./infra/scripts/deploy-application.ps1 -SubscriptionId $subscription -ManifestPath $manifest -Action Validate -Offline -SecureParametersPath $secureApplication
-./infra/scripts/deploy-all.ps1 -SubscriptionId $subscription -ManifestPath $manifest -Action Validate -Offline
+./infra/scripts/deploy-foundation.ps1 -ManifestPath $manifest -Action Validate -Offline
+./infra/scripts/deploy-foundry.ps1 -ManifestPath $manifest -Action Validate -Offline
+./infra/scripts/deploy-storage.ps1 -ManifestPath $manifest -Action Validate -Offline
+./infra/scripts/deploy-data.ps1 -ManifestPath $manifest -Action Validate -Offline
+./infra/scripts/deploy-monitoring.ps1 -ManifestPath $manifest -Action Validate -Offline
+./infra/scripts/deploy-compute.ps1 -ManifestPath $manifest -Action Validate -Offline
+./infra/scripts/deploy-application.ps1 -ManifestPath $manifest -Action Validate -Offline -SecureParametersPath $secureApplication
+./infra/scripts/deploy-all.ps1 -ManifestPath $manifest -Action Validate -Offline
 ```
 
 Enable the selected stage in the manifest before invoking its wrapper. Default all only processes enabled foundation, Foundry, storage, data and monitoring, **never compute/application**, even if their sections are enabled. Monitoring is disabled in the example. Dependencies are separate ARM deployments, not a cloud transaction; earlier successful stages remain if a later stage fails. All cannot implicitly obtain/use SQL passwords; run opted-in password data separately with its protected file.
 
-The following are **operator-only cloud commands**, NOT executed by local validation. Azure `Validate` uses ARM and existing-resource read-only preflight; `WhatIf` previews changes and may require elevated read/what-if rights. Apply can incur charges. First authenticate deliberately outside the wrappers, verify subscription/tenant/provider registration and approve the dated forecast. WhatIf writes a per-stage hash-only receipt under `$HOME\pii-private\receipts`; a single-stage wrapper can override `-WhatIfReceiptPath`. Apply requires that reviewed receipt plus both explicit switches and repeats the selected stage preview immediately before create.
+The following are **operator-only cloud commands**, NOT executed by local validation. Azure `Validate` uses ARM and existing-resource read-only preflight; `WhatIf` previews changes and may require elevated read/what-if rights. Apply can incur charges. First authenticate deliberately outside the wrappers, verify the manifest subscription/tenant/provider registration and approve the dated forecast. WhatIf writes a per-stage receipt under `$HOME\pii-private\receipts`; a single-stage wrapper can override `-WhatIfReceiptPath`. Receipts include hashes, effective nonsecret root/shared configuration and only the selected manifest path as source provenance, but no ARM payloads or secure values. Apply requires that reviewed receipt plus both explicit switches and repeats the selected stage preview immediately before create.
 
 ```powershell
-./infra/scripts/deploy-foundation.ps1 -SubscriptionId $subscription -ManifestPath $manifest -Action WhatIf
-./infra/scripts/deploy-foundry.ps1 -SubscriptionId $subscription -ManifestPath $manifest -Action WhatIf
-./infra/scripts/deploy-storage.ps1 -SubscriptionId $subscription -ManifestPath $manifest -Action WhatIf
-./infra/scripts/deploy-data.ps1 -SubscriptionId $subscription -ManifestPath $manifest -Action WhatIf
-./infra/scripts/deploy-monitoring.ps1 -SubscriptionId $subscription -ManifestPath $manifest -Action WhatIf
-./infra/scripts/deploy-compute.ps1 -SubscriptionId $subscription -ManifestPath $manifest -Action WhatIf
-./infra/scripts/deploy-application.ps1 -SubscriptionId $subscription -ManifestPath $manifest -Action WhatIf -SecureParametersPath $secureApplication
-./infra/scripts/deploy-all.ps1 -SubscriptionId $subscription -ManifestPath $manifest -Action WhatIf
+./infra/scripts/deploy-foundation.ps1 -ManifestPath $manifest -Action WhatIf
+./infra/scripts/deploy-foundry.ps1 -ManifestPath $manifest -Action WhatIf
+./infra/scripts/deploy-storage.ps1 -ManifestPath $manifest -Action WhatIf
+./infra/scripts/deploy-data.ps1 -ManifestPath $manifest -Action WhatIf
+./infra/scripts/deploy-monitoring.ps1 -ManifestPath $manifest -Action WhatIf
+./infra/scripts/deploy-compute.ps1 -ManifestPath $manifest -Action WhatIf
+./infra/scripts/deploy-application.ps1 -ManifestPath $manifest -Action WhatIf -SecureParametersPath $secureApplication
+./infra/scripts/deploy-all.ps1 -ManifestPath $manifest -Action WhatIf
 
 # Use any corresponding stage wrapper with Action Validate for authenticated ARM validation.
-./infra/scripts/deploy-data.ps1 -SubscriptionId $subscription -ManifestPath $manifest -Action Validate
+./infra/scripts/deploy-data.ps1 -ManifestPath $manifest -Action Validate
 # Only after that exact stage, parameters, scope, immutable images and forecast are reviewed:
-./infra/scripts/deploy-data.ps1 -SubscriptionId $subscription -ManifestPath $manifest -Action Apply -AuthorizeApply -AcknowledgeCost
-./infra/scripts/deploy-application.ps1 -SubscriptionId $subscription -ManifestPath $manifest -Action Apply -AuthorizeApply -AcknowledgeCost -SecureParametersPath $secureApplication
-./infra/scripts/deploy-all.ps1 -SubscriptionId $subscription -ManifestPath $manifest -Action Apply -AuthorizeApply -AcknowledgeCost
+./infra/scripts/deploy-data.ps1 -ManifestPath $manifest -Action Apply -AuthorizeApply -AcknowledgeCost
+./infra/scripts/deploy-application.ps1 -ManifestPath $manifest -Action Apply -AuthorizeApply -AcknowledgeCost -SecureParametersPath $secureApplication
+./infra/scripts/deploy-all.ps1 -ManifestPath $manifest -Action Apply -AuthorizeApply -AcknowledgeCost
 ```
 
-For each other stage, the exact Apply invocation is the shown WhatIf command with `-Action Apply -AuthorizeApply -AcknowledgeCost`, after its WhatIf receipt is reviewed. The shared helper suppresses deployment outputs and displays only resource IDs/change types. Full ARM changes are captured in memory and canonicalized/hashed, **never printed or archived**; receipts store only stage/subscription/input/change hashes. Apply rejects changed manifest/secure-file/template inputs, changed property-level previews and Delete changes. Protect reviewed files/receipts, inspect intended settings privately and do not edit a receipt to bypass drift. Unknown/volatile ARM preview changes may require a fresh reviewed WhatIf; this cannot eliminate changes between preview and create or turn multiple stages into a transaction. Receipts hash the full manifest, so editing any section intentionally requires renewed previews. There is no automatic pipeline migration; [the existing pipeline](../azure-pipelines.yml) remains on main and retains its own approval/drift gates.
+Work one stage at a time: WhatIf -> privately review effective configuration and changes -> Apply using the SAME `$manifest`. Running `deploy-all` is not required. Compute is a separately authorized infrastructure stage and never starts apps/jobs; application workloads and scheduling remain separately gated. For each other stage, the exact Apply invocation is the shown WhatIf command with `-Action Apply -AuthorizeApply -AcknowledgeCost`, after its receipt is reviewed. The shared helper suppresses deployment outputs and displays only resource IDs/change types. Full ARM changes are captured in memory and canonicalized/hashed, **never printed or archived**. Apply rejects changed manifest/secure-file/template/path inputs, changed property-level previews and Delete changes. Protect reviewed files/receipts and do not edit a receipt to bypass drift. Unknown/volatile ARM previews may need fresh review; this cannot eliminate the race between preview and create or make stages a transaction. Receipts conservatively hash the full manifest, so editing any section (including subscription/tenant) or selecting another path requires renewed previews. External environment mismatches are ignored and cannot change the reviewed inputs. Existing old-format receipts need a fresh WhatIf. [The pipeline](../azure-pipelines.yml) uses these same wrappers and safeguards; see [pipeline configuration](../docs/operations/deployment.md#ci-and-rollback).
 
-Raw CLI equivalents for a private stage parameter file (use actual names/scopes; these bypass wrapper safeguards):
-
-```powershell
-az deployment sub what-if --subscription $subscription --name pii-dev-foundation --location northeurope --template-file infra/stages/foundation.bicep --parameters "@$HOME\pii-private\foundation.parameters.json" --result-format ResourceIdOnly
-az deployment group what-if --subscription $subscription --resource-group pii-dev-rg --name pii-dev-foundry --template-file infra/stages/foundry.bicep --parameters "@$HOME\pii-private\foundry.parameters.json" --mode Incremental --result-format ResourceIdOnly
-az deployment group what-if --subscription $subscription --resource-group pii-dev-rg --name pii-dev-storage --template-file infra/stages/storage.bicep --parameters "@$HOME\pii-private\storage.parameters.json" --mode Incremental --result-format ResourceIdOnly
-az deployment group what-if --subscription $subscription --resource-group pii-dev-rg --name pii-dev-data --template-file infra/stages/data.bicep --parameters "@$HOME\pii-private\data.parameters.json" --mode Incremental --result-format ResourceIdOnly
-az deployment group what-if --subscription $subscription --resource-group pii-dev-rg --name pii-dev-monitoring --template-file infra/stages/monitoring.bicep --parameters "@$HOME\pii-private\monitoring.parameters.json" --mode Incremental --result-format ResourceIdOnly
-az deployment group what-if --subscription $subscription --resource-group pii-dev-rg --name pii-dev-compute --template-file infra/stages/compute.bicep --parameters "@$HOME\pii-private\compute.parameters.json" --mode Incremental --result-format ResourceIdOnly
-az deployment group what-if --subscription $subscription --resource-group pii-dev-rg --name pii-dev-application --template-file infra/stages/application.bicep --parameters "@$HOME\pii-private\application.parameters.json" "@$secureApplication" --mode Incremental --result-format ResourceIdOnly
-```
-
-For authenticated Validate replace `what-if` with `validate` and remove `--result-format`; for authorized Apply replace it with `create`, remove that flag and add `--output none`. Subscription scope is implicitly incremental. Reviewed [per-stage Bicep parameter examples](parameters/foundation.example.bicepparam) compile with `az bicep build-params`; they are independent alternatives to the shared manifest, not automatic source-of-truth merges.
+[Per-stage parameter projections](parameters/foundation.bicepparam) use `loadJsonContent('manifest.json')` and compile with `az bicep build-params`. They project the tracked placeholder for static inspection only; they contain no second set of editable identifiers and are NOT loaded by wrappers. Operational wrappers generate and delete temporary ARM parameter files from the SAME selected manifest, including schema-1 staged inputs, scopes and stage-specific options. Do not deploy the tracked placeholder directly or maintain independent stage parameter files as competing configuration.
 
 ### Safe Output Retrieval
 
 After an operator-authorized deployment, retrieve **only** `properties.outputs`, never the whole deployment or its parameters. All staged outputs are nonsecret resource identifiers/endpoints and stage metadata, not connection strings, account keys, passwords, tokens or provider credentials. Monitoring outputs contain IDs/enabled state only; obtain ingestion configuration separately with an approved tool into protected local configuration, never public logs. These read-only commands are operator examples, not executed verification:
 
+`$subscription` in raw CLI examples is only a read-only convenience derived from the selected JSON, not another configuration source. Wrappers never accept it as an argument.
+
 ```powershell
+$subscription = (Get-Content $manifest -Raw | ConvertFrom-Json).subscriptionId
 $resourceGroup = '<actual-stage-resource-group>'
 # Use actual prefix/environment deployment names and each stage's selected RG.
 az deployment sub show --subscription $subscription --name pii-dev-foundation --query properties.outputs --output json
@@ -123,6 +134,7 @@ Main-owner host configuration changes are implemented. In Development, web loads
 The actual SDK is **10.0.401**, not 8.x or an assumed installed version. Existing root Dockerfiles build .NET10 and use ASP.NET10 runtime (worker needs Microsoft.AspNetCore.App). Image build/push is a separate operator/CI release activity after compute. Never use `latest` or local image ID as ACR manifest digest:
 
 ```powershell
+$subscription = (Get-Content $manifest -Raw | ConvertFrom-Json).subscriptionId
 dotnet --version
 docker build --file Dockerfile.web --build-arg SDK_VERSION=10.0.401 --tag <acr-login>/pii/web:<immutable-build-id> .
 docker build --file Dockerfile.worker --build-arg SDK_VERSION=10.0.401 --tag <acr-login>/pii/worker:<immutable-build-id> .
@@ -144,8 +156,8 @@ Both hosts now have Development user-secrets support and explicit Azure Blob sel
 ./infra/validation/Test-ModularStages.ps1
 ./infra/validation/Test-DeploymentWrappers.ps1
 ./infra/validation/Test-LocalIntegrationTemplates.ps1
-./infra/validation/Test-IaC.ps1
-./infra/validation/Test-ParameterGates.ps1
+./infra/validation/Test-ManifestResolution.ps1
+./infra/validation/Test-StagedPipeline.ps1
 ./infra/validation/Test-Documentation.ps1
 ```
 

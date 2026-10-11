@@ -12,6 +12,8 @@ Use one shared finite Consumption Container Apps Job at UTC cron `* * * * *`, `-
 
 Same-date due-key uniqueness handles repeated minute starts and DST. Full prior-day outage does not create fictitious historical briefs; existing pending runs are recovered/stopped under their actual deadlines, and current-date daily submission occurs after due time using actual evidence/cutoff. Changing scheduleVersion changes idempotency and must be intentional.
 
+Deployment clarification: this decision records the selected runtime dispatch behavior, not a combined provisioning artifact. The [application stage](../../infra/stages/application.bicep) owns the job; workloads and scheduling default off and require explicit authorization through the single central-manifest staged workflow. Dependency/compute stages do not activate polling.
+
 ## Alternatives
 
 Storage Queue with durable run intent could avoid SQL wake from idle queue-scaler checks, but introduces delivery/visibility/repair/poison boundaries and still needs prompt lost-dispatch repair. Once-daily SQL scan misses within-minutes work. In-process fire-and-forget and forever dispatcher are rejected. No claim of measured cloud superiority or cheapest cost is made.

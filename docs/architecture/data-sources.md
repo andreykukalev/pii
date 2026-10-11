@@ -30,7 +30,7 @@ Source code/config keys: `Pii:Sources:Sec:RightsAuthorized`, `ModelProcessingAll
 
 ## Source Configuration
 
-Configuration is bound by [InfrastructureRegistration](../../src/Pii.Infrastructure/InfrastructureRegistration.cs) and forwarded only to the **worker** by [Bicep](../../infra/main.bicep). Host settings are unchanged and default deny. Configuration paths use `:`; environment equivalents use `__`:
+Configuration is bound by [InfrastructureRegistration](../../src/Pii.Infrastructure/InfrastructureRegistration.cs) and forwarded only to the **worker** by [application stage](../../infra/stages/application.bicep), using the selected central manifest. Host settings are unchanged and default deny. Configuration paths use `:`; environment equivalents use `__`:
 
 | Configuration Key | Worker Environment Key | Behavior |
 | --- | --- | --- |

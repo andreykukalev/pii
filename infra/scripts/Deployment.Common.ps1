@@ -9,11 +9,18 @@ function Invoke-PiiAz {
 }
 
 function Read-PiiManifest {
-    param([string]$Path, [string]$SubscriptionId)
+    [CmdletBinding()]
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { throw 'ManifestPath must explicitly select an existing manifest.' }
     $manifest = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
-    if ($manifest.schemaVersion -ne 1) { throw 'Unsupported manifest schemaVersion.' }
+    if ($manifest.schemaVersion -notin @(1,2)) { throw 'Unsupported manifest schemaVersion.' }
+    $SubscriptionId = if ($manifest.PSObject.Properties.Name -contains 'subscriptionId') { $manifest.subscriptionId } else { '' }
     $parsedId = [guid]::Empty
-    if (-not [guid]::TryParse($SubscriptionId, [ref]$parsedId) -or $parsedId -eq [guid]::Empty -or $manifest.subscriptionId -cne $SubscriptionId) { throw 'Explicit subscription must match manifest subscriptionId.' }
+    if ($SubscriptionId -isnot [string] -or -not [guid]::TryParse($SubscriptionId, [ref]$parsedId) -or $parsedId -eq [guid]::Empty) { throw 'Manifest subscriptionId must be a nonempty GUID.' }
+    $manifest | Add-Member -NotePropertyName selection -NotePropertyValue ([pscustomobject]@{ manifestPath = (Resolve-Path -LiteralPath $Path).Path }) -Force
+    foreach ($default in @{ prefix = 'pii'; environmentName = 'dev'; tags = [pscustomobject]@{} }.GetEnumerator()) {
+        if ($null -eq $manifest.PSObject.Properties[$default.Key]) { $manifest | Add-Member $default.Key $default.Value }
+    }
     foreach ($name in @('resourceGroupName', 'location', 'environmentName', 'prefix')) {
         if ($manifest.$name -notmatch '^[a-z][a-z0-9-]{1,39}$') { throw "Invalid manifest $name." }
     }
@@ -22,8 +29,157 @@ function Read-PiiManifest {
         if ($property.Name -notin @('foundation','foundry','storage','data','monitoring','compute','application')) { throw 'Unknown manifest stage.' }
         if ($property.Value.enabled -isnot [bool]) { throw 'Stage enabled must be a boolean.' }
         if ($property.Value.PSObject.Properties.Name -contains 'resourceGroupName' -and $property.Value.resourceGroupName -notmatch '^[a-z][a-z0-9-]{1,39}$') { throw 'Invalid stage resourceGroupName.' }
+        foreach ($name in @('location','prefix','environmentName','tags')) {
+            $parameter = $property.Value.parameters.PSObject.Properties[$name]
+            if ($null -ne $parameter -and (ConvertTo-Json -InputObject (Convert-PiiCanonicalValue $parameter.Value) -Depth 100 -Compress) -cne (ConvertTo-Json -InputObject (Convert-PiiCanonicalValue $manifest.$name) -Depth 100 -Compress)) { throw "Conflicting configuration paths: $name and stages.$($property.Name).parameters.$name." }
+        }
     }
+    Resolve-PiiSharedConfiguration $manifest
     return $manifest
+}
+
+function Resolve-PiiSharedConfiguration {
+    param($Configuration)
+    $bindings = [ordered]@{
+        'auth.tenantId' = @('data.tenantId','application.tenantId')
+        'auth.allowedObjectId' = @('application.allowedObjectId')
+        'auth.webAppClientId' = @('application.webClientId')
+        'storage.accountName' = @('storage.accountName','compute.storageAccountName')
+        'storage.documentsName' = @('storage.documentsName','compute.documentsName','application.documentsName')
+        'storage.keysName' = @('storage.keysName','compute.keysName')
+        'data.serverName' = @('data.serverName')
+        'data.databaseName' = @('data.databaseName','application.databaseName')
+        'foundry.accountName' = @('foundry.accountName','compute.foundryAccountName')
+        'foundry.projectName' = @('foundry.projectName')
+        'foundry.deploymentName' = @('foundry.deploymentName','application.modelDeploymentName')
+        'foundry.modelVersion' = @('foundry.modelVersion','application.modelVersion')
+        'compute.managedEnvironmentName' = @('compute.managedEnvironmentName','application.managedEnvironmentName')
+        'compute.registryName' = @('compute.registryName','application.registryName')
+        'compute.registryResourceGroup' = @('compute.registryResourceGroup','application.registryResourceGroup')
+        'compute.webIdentityName' = @('compute.webIdentityName','application.webIdentityName')
+        'compute.workerIdentityName' = @('compute.workerIdentityName','application.workerIdentityName')
+        'compute.webName' = @('application.webName')
+        'compute.workerName' = @('application.workerName')
+        'monitoring.workspaceName' = @('monitoring.workspaceName','compute.workspaceName')
+        'monitoring.workspaceResourceGroup' = @('monitoring.workspaceResourceGroup','compute.workspaceResourceGroup')
+        'monitoring.insightsName' = @('monitoring.insightsName')
+    }
+    if ($Configuration.PSObject.Properties.Name -notcontains 'shared') { $Configuration | Add-Member shared ([pscustomobject]@{}) }
+    if ($Configuration.shared -isnot [pscustomobject]) { throw 'shared must be an object.' }
+    foreach ($group in $Configuration.shared.PSObject.Properties) {
+        if ($group.Name -notin @('auth','storage','data','foundry','compute','monitoring') -or $group.Value -isnot [pscustomobject]) { throw "Unknown or invalid shared group: shared.$($group.Name)." }
+        foreach ($field in $group.Value.PSObject.Properties) {
+            if ("$($group.Name).$($field.Name)" -notin @($bindings.Keys) -and "$($group.Name).$($field.Name)" -notin @('storage.resourceGroupName','data.resourceGroupName','foundry.resourceGroupName','compute.resourceGroupName','monitoring.resourceGroupName')) {
+                throw "Unknown shared field: shared.$($group.Name).$($field.Name). Secrets belong in external protected files."
+            }
+        }
+    }
+    foreach ($groupName in @('auth','storage','data','foundry','compute','monitoring')) {
+        if ($null -eq $Configuration.shared.PSObject.Properties[$groupName]) { $Configuration.shared | Add-Member $groupName ([pscustomobject]@{}) }
+    }
+    foreach ($binding in $bindings.Keys) {
+        $groupName, $fieldName = $binding.Split('.')
+        $group = $Configuration.shared.$groupName
+        $value = $null
+        $source = "shared.$binding"
+        if ($null -ne $group.PSObject.Properties[$fieldName]) {
+            $value = $group.$fieldName
+            if ($value -isnot [string] -or [string]::IsNullOrWhiteSpace($value)) { throw "Nonempty string required: shared.$binding." }
+        }
+        foreach ($target in $bindings[$binding]) {
+            $stageName, $parameterName = $target.Split('.')
+            $stage = $Configuration.stages.PSObject.Properties[$stageName]
+            if ($null -eq $stage) { continue }
+            $parameters = $stage.Value.parameters
+            if ($null -ne $parameters.PSObject.Properties[$parameterName]) {
+                if ($null -eq $value) { $value = $parameters.$parameterName; $source = "stages.$stageName.parameters.$parameterName" }
+                elseif ($value -cne $parameters.$parameterName) { throw "Conflicting configuration paths: $source and stages.$stageName.parameters.$parameterName." }
+            }
+        }
+        if ($null -eq $value) { continue }
+        if ($value -isnot [string] -or [string]::IsNullOrWhiteSpace($value)) { throw "Nonempty string required: $source." }
+        $group | Add-Member $fieldName $value -Force
+        foreach ($target in $bindings[$binding]) {
+            $stageName, $parameterName = $target.Split('.')
+            $stage = $Configuration.stages.PSObject.Properties[$stageName]
+            if ($null -ne $stage) { $stage.Value.parameters | Add-Member $parameterName $value -Force }
+        }
+    }
+    foreach ($ownerName in @('storage','data','foundry','compute','monitoring')) {
+        $owner = $Configuration.stages.PSObject.Properties[$ownerName]
+        $ownerSection = if ($null -eq $owner) { [pscustomobject]@{ enabled = $false; parameters = [pscustomobject]@{} } } else { $owner.Value }
+        $group = $Configuration.shared.$ownerName
+        $scope = $null
+        $source = "shared.$ownerName.resourceGroupName"
+        if ($null -ne $group.PSObject.Properties['resourceGroupName']) { $scope = $group.resourceGroupName }
+        if ($null -ne $ownerSection.PSObject.Properties['existingResourceId']) {
+            $types = @{ foundry = 'Microsoft.CognitiveServices/accounts'; storage = 'Microsoft.Storage/storageAccounts'; data = 'Microsoft.Sql/servers' }
+            $identifier = $ownerSection.existingResourceId
+            if (-not $types.ContainsKey($ownerName) -or $identifier -notmatch '^/subscriptions/([^/]+)/resourceGroups/([^/]+)/providers/([^/]+/[^/]+)/([^/]+)$') { throw "Invalid stages.$ownerName.existingResourceId." }
+            if ($Matches[1] -ine $Configuration.subscriptionId -or $Matches[3] -ine $types[$ownerName]) { throw "Existing resource ID subscription/type mismatch: stages.$ownerName.existingResourceId." }
+            $idScope = $Matches[2]
+            $idName = $Matches[4]
+            $nameKey = if ($ownerName -eq 'data') { 'serverName' } else { 'accountName' }
+            if ($ownerSection.parameters.mode -cne 'existing' -or $null -eq $group.PSObject.Properties[$nameKey] -or $group.$nameKey -cne $idName) { throw "Existing ID must match explicit existing mode/name: stages.$ownerName.existingResourceId and shared.$ownerName.$nameKey." }
+            if ($null -ne $scope -and $scope -cne $idScope) { throw "Conflicting configuration paths: $source and stages.$ownerName.existingResourceId." }
+            $scope = $idScope
+            $source = "stages.$ownerName.existingResourceId"
+        }
+        if ($null -ne $ownerSection.PSObject.Properties['resourceGroupName']) {
+            if ($null -ne $scope -and $scope -cne $ownerSection.resourceGroupName) { throw "Conflicting configuration paths: $source and stages.$ownerName.resourceGroupName." }
+            $scope = $ownerSection.resourceGroupName
+        }
+        $consumerKey = @{ storage = 'storageResourceGroup'; foundry = 'foundryResourceGroup' }[$ownerName]
+        if ($null -eq $scope -and -not $ownerSection.enabled -and $consumerKey -and $null -ne $Configuration.stages.PSObject.Properties['compute']) {
+            $consumerScope = $Configuration.stages.compute.parameters.PSObject.Properties[$consumerKey]
+            if ($null -ne $consumerScope) { $scope = $consumerScope.Value }
+        }
+        if ($null -eq $scope) { $scope = $Configuration.resourceGroupName }
+        if ($scope -notmatch '^[a-z][a-z0-9-]{1,39}$') { throw "Invalid shared.$ownerName.resourceGroupName." }
+        $group | Add-Member resourceGroupName $scope -Force
+        if ($null -ne $owner) { $ownerSection | Add-Member resourceGroupName $scope -Force }
+        if ($consumerKey -and $Configuration.stages.PSObject.Properties.Name -contains 'compute') {
+            $parameters = $Configuration.stages.compute.parameters
+            if ($null -ne $parameters.PSObject.Properties[$consumerKey] -and $parameters.$consumerKey -cne $scope) { throw "Conflicting configuration paths: shared.$ownerName.resourceGroupName and stages.compute.parameters.$consumerKey." }
+            $parameters | Add-Member $consumerKey $scope -Force
+        }
+    }
+    foreach ($scopeBinding in @(@('compute','registryResourceGroup'), @('monitoring','workspaceResourceGroup'))) {
+        $ownerName, $parameterName = $scopeBinding
+        $group = $Configuration.shared.$ownerName
+        if ($null -eq $group.PSObject.Properties[$parameterName] -and $null -ne $group.PSObject.Properties['resourceGroupName']) {
+            $group | Add-Member $parameterName $group.resourceGroupName
+            foreach ($target in $bindings["$ownerName.$parameterName"]) {
+                $stageName, $targetName = $target.Split('.')
+                if ($null -ne $Configuration.stages.PSObject.Properties[$stageName]) { $Configuration.stages.$stageName.parameters | Add-Member $targetName $group.resourceGroupName -Force }
+            }
+        }
+    }
+    if ($null -ne $Configuration.stages.PSObject.Properties['application'] -and $Configuration.stages.application.enabled -and $null -ne $Configuration.stages.PSObject.Properties['compute']) {
+        $applicationGroup = $Configuration.resourceGroupName
+        if ($null -ne $Configuration.stages.application.PSObject.Properties['resourceGroupName']) { $applicationGroup = $Configuration.stages.application.resourceGroupName }
+        if ($applicationGroup -cne $Configuration.shared.compute.resourceGroupName) { throw 'Conflicting configuration paths: stages.application.resourceGroupName and shared.compute.resourceGroupName. Existing Bicep requires environment/identities in the application RG.' }
+    }
+    if ($Configuration.stages.PSObject.Properties.Name -contains 'application') {
+        $parameters = $Configuration.stages.application.parameters
+        $endpoints = @{}
+        if ($null -ne $Configuration.shared.storage.PSObject.Properties['accountName']) {
+            $endpoints.blobServiceUri = "https://$($Configuration.shared.storage.accountName).blob.core.windows.net/"
+            if ($null -ne $Configuration.shared.storage.PSObject.Properties['keysName']) { $endpoints.keyRingUri = "https://$($Configuration.shared.storage.accountName).blob.core.windows.net/$($Configuration.shared.storage.keysName)/keyring.xml" }
+        }
+        if ($null -ne $Configuration.shared.data.PSObject.Properties['serverName']) { $endpoints.sqlServerFqdn = "$($Configuration.shared.data.serverName).database.windows.net" }
+        foreach ($key in $endpoints.Keys) {
+            if ($null -ne $parameters.PSObject.Properties[$key]) {
+                $actual = $parameters.$key
+                $valid = switch ($key) {
+                    'blobServiceUri' { $actual.TrimEnd('/') -ceq $endpoints[$key].TrimEnd('/') }
+                    'keyRingUri' { $actual -cmatch ('^https://' + [regex]::Escape($Configuration.shared.storage.accountName) + '\.blob\.core\.windows\.net/' + [regex]::Escape($Configuration.shared.storage.keysName) + '/[^\s?#]+\.xml$') }
+                    default { $actual -ceq $endpoints[$key] }
+                }
+                if (-not $valid) { throw "Conflicting configuration paths: stages.application.parameters.$key and shared storage/data identifiers. Expected HTTPS account root / HTTPS XML blob path / selected SQL hostname." }
+            } else { $parameters | Add-Member $key $endpoints[$key] }
+        }
+    }
 }
 
 function Get-PiiValue {
@@ -62,16 +218,35 @@ function Convert-PiiCanonicalValue {
 
 function ConvertFrom-PiiWhatIfOutput {
     param([Parameter(Mandatory)][string]$Output)
-    $jsonLines = @($Output -split "`r?`n" | Where-Object {
-        $_.Trim() -and $_ -notmatch '^\s*Note:\s'
-    })
-    if ($jsonLines.Count -eq 0) { throw 'Azure CLI WhatIf response did not contain JSON.' }
-    try { $response = ($jsonLines -join [Environment]::NewLine) | ConvertFrom-Json }
-    catch { throw 'Azure CLI WhatIf response contained unexpected text or invalid JSON.' }
-    if ($null -eq $response.PSObject.Properties['changes']) {
-        throw 'Azure CLI WhatIf JSON did not contain a changes list.'
+    $normalized = ($Output -replace '\x1B\[[0-?]*[ -/]*[@-~]', '').TrimStart([char]0xFEFF)
+    foreach ($match in [regex]::Matches($normalized, '(?m)^\s*\{')) {
+        $start = $match.Index + $match.Value.LastIndexOf('{')
+        $depth = 0
+        $inString = $false
+        $escaped = $false
+        for ($index = $start; $index -lt $normalized.Length; $index++) {
+            $character = $normalized[$index]
+            if ($inString) {
+                if ($escaped) { $escaped = $false }
+                elseif ($character -eq '\') { $escaped = $true }
+                elseif ($character -eq '"') { $inString = $false }
+                continue
+            }
+            if ($character -eq '"') { $inString = $true; continue }
+            if ($character -eq '{') { $depth++ }
+            elseif ($character -eq '}') {
+                $depth--
+                if ($depth -eq 0) {
+                    $json = $normalized.Substring($start, $index - $start + 1)
+                    try { $response = $json | ConvertFrom-Json }
+                    catch { break }
+                    if ($null -ne $response.PSObject.Properties['changes']) { return $response.changes }
+                    break
+                }
+            }
+        }
     }
-    return $response.changes
+    throw 'Azure CLI WhatIf output did not contain a valid JSON document with a changes list.'
 }
 
 function Test-PiiParameters {
@@ -136,10 +311,10 @@ function Test-PiiParameters {
         if ((& $get 'developmentPasswordOptIn') -and [string]::IsNullOrWhiteSpace((& $get 'sqlAdministratorPassword'))) { throw 'Password opt-in requires a secure password parameter.' }
     }
     if ($Stage -eq 'monitoring') {
-        if ((& $get 'workspaceMode') -eq 'create' -and $Parameters.ContainsKey('workspaceResourceGroup') -and (& $get 'workspaceResourceGroup') -cne $Manifest.resourceGroupName) { throw 'New workspace must use deployment RG.' }
+        if ((& $get 'workspaceMode') -eq 'create' -and $Parameters.ContainsKey('workspaceResourceGroup') -and (& $get 'workspaceResourceGroup') -cne $Manifest.stages.monitoring.resourceGroupName) { throw 'New workspace must use deployment RG.' }
     }
     if ($Stage -in @('compute','application')) {
-        if ((& $get 'registryMode') -eq 'create' -and $Parameters.ContainsKey('registryResourceGroup') -and (& $get 'registryResourceGroup') -cne $Manifest.resourceGroupName) { throw 'New registry must use deployment RG.' }
+        if ((& $get 'registryMode') -eq 'create' -and $Parameters.ContainsKey('registryResourceGroup') -and (& $get 'registryResourceGroup') -cne $Manifest.stages.compute.resourceGroupName) { throw 'New registry must use deployment RG.' }
         if ((& $get 'monitoringEnabled') -and [string]::IsNullOrWhiteSpace((& $get 'workspaceName'))) { throw 'Monitoring needs explicit workspaceName.' }
         if ((& $get 'grantInference') -and [string]::IsNullOrWhiteSpace((& $get 'foundryAccountName'))) { throw 'Inference grant needs explicit foundryAccountName.' }
     }
@@ -304,12 +479,14 @@ function Invoke-PiiStage {
     [CmdletBinding()]
     param(
         [ValidateSet('foundation','foundry','storage','data','monitoring','compute','application')][string]$Stage,
-        [string]$SubscriptionId, [string]$ManifestPath,
+        [Parameter(Mandatory)][string]$ManifestPath,
         [ValidateSet('WhatIf','Validate','Apply')][string]$Action,
         [switch]$Offline, [switch]$AuthorizeApply, [switch]$AcknowledgeCost,
         [string]$SecureParametersPath = '', [string]$WhatIfReceiptPath = ''
     )
-    $manifest = Read-PiiManifest $ManifestPath $SubscriptionId
+    $manifest = Read-PiiManifest $ManifestPath
+    $SubscriptionId = $manifest.subscriptionId
+    $ManifestPath = $manifest.selection.manifestPath
     $section = $manifest.stages.$Stage
     $deploymentGroup = $manifest.resourceGroupName
     if ($section.PSObject.Properties.Name -contains 'resourceGroupName') {
@@ -329,6 +506,7 @@ function Invoke-PiiStage {
     if (-not $section.enabled) { throw "Stage $Stage is disabled in manifest." }
     if ($Offline -and $Action -ne 'Validate') { throw 'Offline supports Validate only.' }
     if ($Action -eq 'Apply' -and (-not $AuthorizeApply -or -not $AcknowledgeCost)) { throw 'Apply requires -AuthorizeApply and -AcknowledgeCost.' }
+    if ($Action -eq 'Apply' -and (ConvertTo-Json -InputObject $manifest -Depth 100) -match '"REPLACE-') { throw 'Replace manifest placeholders with verified values before Apply.' }
     $root = Split-Path $PSScriptRoot -Parent
     $templatePath = Join-Path $root "stages/$Stage.bicep"
     $compiledPath = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString('N') + '.json')
@@ -359,7 +537,8 @@ function Invoke-PiiStage {
         Test-PiiParameters $parameters $template $manifest $Stage
         if ($Offline) { return "Passed local compilation and parameter contract: $Stage. Azure deployment validation NotRun." }
         $secureText = if ($SecureParametersPath) { Get-Content -LiteralPath $SecureParametersPath -Raw } else { '' }
-        $fingerprint = Get-PiiHash ((Get-Content -LiteralPath $ManifestPath -Raw) + (Get-Content -LiteralPath $compiledPath -Raw) + $secureText + $SubscriptionId + $Stage)
+        $effectiveConfiguration = [pscustomobject]@{ subscriptionId = $SubscriptionId; resourceGroupName = $manifest.resourceGroupName; location = $manifest.location; prefix = $manifest.prefix; environmentName = $manifest.environmentName; shared = $manifest.shared; selection = $manifest.selection }
+        $fingerprint = Get-PiiHash ((Get-Content -LiteralPath $ManifestPath -Raw) + (ConvertTo-Json -InputObject (Convert-PiiCanonicalValue $manifest) -Depth 100 -Compress) + (Get-Content -LiteralPath $compiledPath -Raw) + $secureText + $Stage)
         if (-not $WhatIfReceiptPath) { $WhatIfReceiptPath = Join-Path $HOME "pii-private/receipts/$($manifest.prefix)-$($manifest.environmentName)-$Stage.json" }
         if ($Action -eq 'Apply') {
             if (-not (Test-Path -LiteralPath $WhatIfReceiptPath)) { throw 'Apply requires a previously reviewed WhatIf receipt for this exact stage.' }
@@ -381,7 +560,7 @@ function Invoke-PiiStage {
             if ($SecureParametersPath) { $common += @('--parameters',"@$((Resolve-Path -LiteralPath $SecureParametersPath).Path)") }
             $operation = @{ WhatIf = 'what-if'; Validate = 'validate'; Apply = 'create' }[$Action]
             if ($Action -in @('WhatIf','Apply')) {
-                $preview = Invoke-PiiAz -Arguments ($base + @('what-if') + $common + @('--result-format','FullResourcePayloads','--output','json'))
+                $preview = Invoke-PiiAz -Arguments ($base + @('what-if') + $common + @('--no-pretty-print','--result-format','FullResourcePayloads','--output','json'))
                 $changes = @(ConvertFrom-PiiWhatIfOutput -Output $preview | Sort-Object resourceId)
                 $changeHash = Get-PiiHash (ConvertTo-Json -InputObject (Convert-PiiCanonicalValue $changes) -Depth 100 -Compress)
                 foreach ($change in $changes) {
@@ -392,7 +571,7 @@ function Invoke-PiiStage {
                 if ($Action -eq 'WhatIf') {
                     $directory = Split-Path $WhatIfReceiptPath -Parent
                     if ($directory -and -not (Test-Path -LiteralPath $directory)) { $null = New-Item -ItemType Directory -Path $directory -Force }
-                    @{ stage = $Stage; subscriptionId = $SubscriptionId; fingerprint = $fingerprint; changeHash = $changeHash } | ConvertTo-Json | Set-Content -LiteralPath $WhatIfReceiptPath -Encoding UTF8
+                    @{ stage = $Stage; subscriptionId = $SubscriptionId; fingerprint = $fingerprint; changeHash = $changeHash; effectiveConfiguration = $effectiveConfiguration } | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $WhatIfReceiptPath -Encoding UTF8
                     Write-Output "Review selected inputs and displayed changes; receipt: $WhatIfReceiptPath. No resource payloads archived."
                 }
             }

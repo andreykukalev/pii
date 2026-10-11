@@ -72,11 +72,9 @@ try {
         foreach ($key in @('AZURE_CLIENT_ID','Pii__Sql__ConnectionString','telemetryEnvironment')) { Assert-Stage ($json.Contains($key)) "host contract $key" }
     }
     Assert-Stage (($app.variables | ConvertTo-Json -Depth 100).Contains('APPLICATIONINSIGHTS_CONNECTION_STRING')) 'shared opt-in telemetry secret reference'
-    $legacyPath = Join-Path $infra 'main.bicep'
-    $legacySource = Get-Content $legacyPath -Raw
     $appSource = Get-Content (Join-Path $infra 'stages/application.bicep') -Raw
-    foreach ($match in [regex]::Matches($legacySource, "name: '(Pii__[A-Za-z0-9_]+|AzureAd__[A-Za-z0-9_]+|ASPNETCORE_[A-Z_]+|DOTNET_ENVIRONMENT|PII_TWELVEDATA_API_KEY)'")) {
-        Assert-Stage ($appSource.Contains($match.Groups[1].Value)) "preserved environment key $($match.Groups[1].Value)"
+    foreach ($key in Get-Content (Join-Path $PSScriptRoot 'fixtures/application-environment-keys.txt')) {
+        Assert-Stage ($appSource.Contains($key)) "required environment key $key"
     }
     foreach ($stage in $templates.Keys) {
         $json = $templates[$stage] | ConvertTo-Json -Depth 100
@@ -87,7 +85,7 @@ try {
             }
         }
     }
-    $manifest = Get-Content (Join-Path $infra 'parameters/manifest.example.json') -Raw | ConvertFrom-Json
+    $manifest = Get-Content (Join-Path $PSScriptRoot 'fixtures/manifest.json') -Raw | ConvertFrom-Json
     Assert-Stage (-not $manifest.stages.compute.enabled -and -not $manifest.stages.application.enabled -and -not $manifest.stages.monitoring.enabled) 'example no default compute/application/monitoring'
     Write-Output "Passed $script:checks local Bicep/module and ARM contract checks. No authenticated Azure calls."
 } finally { Remove-Item -LiteralPath $temporary -Recurse -Force }

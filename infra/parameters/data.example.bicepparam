@@ -1,7 +1,0 @@
-using '../stages/data.bicep'
-param location = 'northeurope'
-param serverName = 'pii-dev-replace-sql'
-param tenantId = '22222222-2222-2222-2222-222222222222'
-param adminObjectId = '33333333-3333-3333-3333-333333333333'
-param adminName = 'REPLACE-ENTRA-ADMIN'
-param computeModel = 'Serverless'

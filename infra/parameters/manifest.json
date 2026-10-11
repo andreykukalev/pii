@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 2,
+  "subscriptionId": "REPLACE-SUBSCRIPTION-GUID",
+  "resourceGroupName": "pii-dev-rg",
+  "location": "replace-region",
+  "environmentName": "dev",
+  "prefix": "pii",
+  "tags": { "application": "pii", "environment": "dev" },
+  "shared": {
+    "auth": { "tenantId": "REPLACE-TENANT-GUID", "allowedObjectId": "REPLACE-OWNER-OBJECT-GUID", "webAppClientId": "REPLACE-WEB-APP-CLIENT-GUID" },
+    "foundry": { "accountName": "pii-dev-replace-ai", "projectName": "pii-dev-project" },
+    "storage": { "accountName": "stpiidevreplace", "documentsName": "documents", "keysName": "keys" },
+    "data": { "serverName": "pii-dev-replace-sql", "databaseName": "pii" },
+    "monitoring": { "workspaceName": "pii-dev-logs", "insightsName": "pii-dev-insights" },
+    "compute": { "managedEnvironmentName": "pii-dev-environment", "registryName": "acrpiidevreplace", "webIdentityName": "pii-dev-web-mi", "workerIdentityName": "pii-dev-worker-mi" }
+  },
+  "stages": {
+    "foundation": { "enabled": true, "parameters": { "createResourceGroup": true } },
+    "foundry": { "enabled": true, "parameters": { "mode": "create", "createProject": true, "createModelDeployment": false } },
+    "storage": { "enabled": true, "parameters": { "mode": "create" } },
+    "data": { "enabled": true, "parameters": { "mode": "create", "adminObjectId": "REPLACE-ADMIN-OBJECT-GUID", "adminName": "REPLACE-ENTRA-ADMIN", "computeModel": "Serverless", "firewallRules": [] } },
+    "monitoring": { "enabled": false, "parameters": { "enabled": true } },
+    "compute": { "enabled": false, "parameters": { "grantInference": false, "monitoringEnabled": false } },
+    "application": { "enabled": false, "parameters": { "deployWorkloads": false, "scheduleEnabled": false, "telemetryEnabled": false } }
+  }
+}
